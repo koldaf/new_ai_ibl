@@ -9,7 +9,7 @@ class Lesson extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['title', 'subject', 'grade_level', 'description'];
+    protected $fillable = ['title', 'subject', 'grade_level', 'description', 'vector_store_path', 'processing_status'];
 
     public function stageContents()
     {

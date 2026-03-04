@@ -1,7 +1,7 @@
 <?php
 
 namespace App\Http\Controllers\Admin;
-
+use App\Jobs\ProcessPdfEmbedding;
 use App\Http\Controllers\Controller;
 use App\Models\Lesson;
 use Illuminate\Http\Request;
@@ -34,10 +34,36 @@ class LessonController extends Controller
             'title'       => 'required|string|max:255',
             'subject'     => 'nullable|string|max:255',
             'grade_level' => 'nullable|string|max:50',
+            'file' => 'required|file|mimes:pdf|max:5120',
             'description' => 'nullable|string',
         ]);
+        $file = $request->file('file');
 
-        $lesson = Lesson::create($validated);
+        /*
+        $media = LessonMedia::create([
+            'lesson_id'   => $lesson->id,
+            'stage'       => $stage,
+            'media_type'  => $mediaType,
+            'file_path'   => $path,
+            'file_name'   => $file->getClientOriginalName(),
+            'title'       => $request->input('title'),
+            'description' => $request->input('description'),
+            'order'       => LessonMedia::where('lesson_id', $lesson->id)->where('stage', $stage)->count() + 1,
+        ]);
+        */
+
+        //$lesson = Lesson::create($validated);
+        $lesson = Lesson::create([
+            'title' => $validated['title'],
+            'subject' => $validated['subject'] ?? null,
+            'grade_level' => $validated['grade_level'] ?? null,
+            'description' => $validated['description'] ?? null,
+            'processing_status' => 'pending',
+        ]);
+
+
+        //dispatch job to process PDF and create embeddings
+        ProcessPdfEmbedding::dispatch($lesson);
 
         return redirect()->route('admin.lessons.edit', $lesson)
             ->with('success', 'Lesson created successfully. Now you can add content for each stage.');

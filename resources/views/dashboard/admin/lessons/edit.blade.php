@@ -29,6 +29,7 @@
                                 <label for="grade_level" class="form-label">Grade Level</label>
                                 <input type="text" class="form-control" id="grade_level" name="grade_level" value="{{ $lesson->grade_level }}">
                             </div>
+                            
                             <div class="col-md-12 mb-3">
                                 <label for="description" class="form-label">Description</label>
                                 <textarea class="form-control wysiwyg-editor" id="description" name="description" rows="2">{{ $lesson->description }}</textarea>
