@@ -38,19 +38,8 @@ class LessonController extends Controller
             'description' => 'nullable|string',
         ]);
         $file = $request->file('file');
-
-        /*
-        $media = LessonMedia::create([
-            'lesson_id'   => $lesson->id,
-            'stage'       => $stage,
-            'media_type'  => $mediaType,
-            'file_path'   => $path,
-            'file_name'   => $file->getClientOriginalName(),
-            'title'       => $request->input('title'),
-            'description' => $request->input('description'),
-            'order'       => LessonMedia::where('lesson_id', $lesson->id)->where('stage', $stage)->count() + 1,
-        ]);
-        */
+        //$path = $file->store("lessons/{$lesson->id}/{$stage}", 'public');
+        $path = $file->store('lessons/' . uniqid(), 'public');
 
         //$lesson = Lesson::create($validated);
         $lesson = Lesson::create([
@@ -58,6 +47,7 @@ class LessonController extends Controller
             'subject' => $validated['subject'] ?? null,
             'grade_level' => $validated['grade_level'] ?? null,
             'description' => $validated['description'] ?? null,
+            'lesson_material_file' => $path,
             'processing_status' => 'pending',
         ]);
 

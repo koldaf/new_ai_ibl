@@ -35,7 +35,7 @@
         <nav aria-label="breadcrumb">
             <ol class="breadcrumb mb-0" style="font-size:0.8rem;">
                 <li class="breadcrumb-item">
-                    <a href="{{ route('dashboard.home') }}" style="color:var(--bo); text-decoration:none;">
+                    <a href="{{ auth()->user()->hasRole('admin') ? route('admin.dashboard') : route('student.lessons.index') }}" style="color:var(--bo); text-decoration:none;">
                         <i class="bi bi-grid-1x2 me-1"></i>Dashboard
                     </a>
                 </li>

@@ -1,0 +1,29 @@
+[90m= [39m[34;4mIlluminate\Database\Eloquent\Collection[39;24m {#1519
+    [34mall[39m: [
+      [34;4mApp\Models\Lesson[39;24m {#6495
+        [34mid[39m: [35m5[39m,
+        [34mtitle[39m: "[32mForms and Sources of Energy[39m",
+        [34msubject[39m: "[32mBasic Science[39m",
+        [34mgrade_level[39m: "[32mJS2[39m",
+        [34mdescription[39m: """
+          [32m<p class="MsoNormal">By the end of the[39m\r\n
+          [32mlesson, students should be able to:<o:p>[39m[32m</o:p>[39m[32m</p>[39m[32m<p>[39m\r\n
+          \r\n
+          [32m</p><ol style="margin-top:0in" start="1" type="1">[39m\r\n
+          [32m <li class="MsoNormal">Differentiate heat from temperature.<o:p>[39m[32m</o:p>[39m[32m</li>[39m\r\n
+          [32m <li class="MsoNormal">Measure temperature correctly using a[39m\r\n
+          [32m     thermometer.<o:p>[39m[32m</o:p>[39m[32m</li>[39m\r\n
+          [32m <li class="MsoNormal">Describe three effects of heat on matter.<o:p>[39m[32m</o:p>[39m[32m</li>[39m\r\n
+          [32m <li class="MsoNormal">Apply expansion concept to real-life[39m\r\n
+          [32m     situations.<o:p>[39m[32m</o:p>[39m[32m</li>[39m\r\n
+          [32m</ol>[39m
+          """,
+        [34mlesson_material_file[39m: "[32mlessons/69a87290d79b1/0w858bvXFFpNAf7BoRSJHoTESTGqL13LN2IqD0yc.pdf[39m",
+        [34mprocessing_status[39m: "[32mfailed[39m",
+        [34mvector_store_path[39m: [36mnull[39m,
+        [34mcreated_at[39m: "[32m2026-03-04 17:57:36[39m",
+        [34mupdated_at[39m: "[32m2026-03-04 17:57:42[39m",
+      },
+    ],
+  }
+

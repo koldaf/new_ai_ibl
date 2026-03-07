@@ -9,7 +9,7 @@ class Lesson extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['title', 'subject', 'grade_level', 'description', 'vector_store_path', 'processing_status'];
+    protected $fillable = ['title', 'subject', 'grade_level', 'description', 'vector_store_path', 'processing_status', 'lesson_material_file'];
 
     public function stageContents()
     {
@@ -41,5 +41,10 @@ class Lesson extends Model
     public function quizQuestions()
     {
         return $this->hasMany(QuizQuestion::class);
+    }
+
+    public function progress()
+    {
+        return $this->hasMany(LessonProgress::class);
     }
 }

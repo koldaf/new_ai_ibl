@@ -445,7 +445,7 @@
     {{-- ═══ SIDEBAR ═══════════════════════════════════════ --}}
     <aside class="sidebar" id="sidebar">
 
-        <a href="{{ route('dashboard.home') }}" class="sidebar-brand">
+        <a href="{{ auth()->user()->hasRole('admin') ? route('admin.dashboard') : route('student.lessons.index') }}" class="sidebar-brand">
             <div class="brand-icon"><i class="bi bi-cpu"></i></div>
             <span class="brand-text">AI-IBL</span>
         </a>
@@ -455,14 +455,15 @@
             {{-- Main --}}
             <div class="nav-label">Main</div>
 
-            <a href="{{ route('dashboard.home') }}"
-               class="nav-item-link {{ request()->routeIs('dashboard.home') ? 'active' : '' }}">
+            <a href="{{ auth()->user()->hasRole('admin') ? route('admin.dashboard') : route('student.lessons.index') }}"
+               class="nav-item-link {{ request()->routeIs(auth()->user()->hasRole('admin') ? 'admin.dashboard' : 'student.lessons.index') ? 'active' : '' }}">
                 <i class="bi bi-grid-1x2"></i>
                 <span>Dashboard</span>
             </a>
 
+            @if(auth()->user()->role === 'admin')
             {{-- Users --}}
-            <div class="nav-label mt-2">Management</div>
+            <div class="nav-label mt-2">Admin Role</div>
 
             <a href="#"
                class="nav-item-link {{ request()->routeIs('users.*') ? 'active' : '' }}">
@@ -496,7 +497,16 @@
                     </a>
                 </div>
             </div>
-
+            @endif
+            @if(auth()->user()->role === 'student')
+                {{-- My Lessons --}}
+                <div class="nav-label mt-2">My Learning</div>
+                <a href="{{ route('student.lessons.index') }}"
+                       class="nav-item-link {{ request()->routeIs('student.lessons.index') ? 'active' : '' }}">
+                        <i class="bi bi-list-ul"></i>
+                        <span>Lesson List</span>
+                </a>
+            @endif
         </nav>
 
         {{-- Logout --}}

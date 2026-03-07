@@ -1,2 +1,10 @@
 @import 'bootstrap/dist/css/bootstrap.min.css';
 @import 'bootstrap-icons/font/bootstrap-icons.min.css';
+
+ .modal {
+           z-index: 2000 !important;
+        }
+
+.modal-backdrop {
+            z-index: 2055 !important;
+        }

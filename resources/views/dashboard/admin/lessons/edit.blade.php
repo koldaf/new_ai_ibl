@@ -111,7 +111,7 @@
                                 <div class="row">
                                     <div class="col-md-12">
                                         <label for="description_{{ $stage }}" class="form-label">Description (optional)</label>
-                                        <textarea name="description" class="form-control" rows="2"></textarea>
+                                        <textarea name="description" class="form-control wysiwyg-editor" rows="2"></textarea>
                                     </div>
                                 </div>
                             </form>
@@ -183,7 +183,7 @@
             var formData = new FormData(this);
 
             $.ajax({
-                url: '{{ route("admin.lessons.stages.media", ["lesson" => $lesson->id, "stage" => "_stage_"]) }}'.replace('_stage_', stage),
+                url: '{{ route("admin.lessons.stages.media.store", ["lesson" => $lesson->id, "stage" => "_stage_"]) }}'.replace('_stage_', stage),
                 method: 'POST',
                 data: formData,
                 processData: false,
@@ -198,7 +198,7 @@
                         (response.media.title ? '<br><small>Title: ' + response.media.title + '</small>' : '') + '</div>' +
                         '<div>' +
                         '<a href="' + response.media.url + '" target="_blank" class="btn btn-sm btn-secondary">View</a> ' +
-                        '<button class="btn btn-sm btn-danger delete-media" data-id="' + response.media.id + '">Delete</button>' +
+                        '<button class="btn btn-sm btn-danger delete-media" data-id="' + response.media.id + '" data-stage="' + stage + '">Delete</button>' +
                         '</div></div>';
 
                     mediaList.append(mediaHtml);
@@ -215,10 +215,11 @@
         $(document).on('click', '.delete-media', function() {
             var btn = $(this);
             var mediaId = btn.data('id');
+            var stage = btn.data('stage');
             if (!confirm('Delete this media?')) return;
 
             $.ajax({
-                url: '{{ route("admin.lessons.media.destroy", ["media" => "_mediaId_"]) }}'.replace('_mediaId_', mediaId),
+                url: '{{ route("admin.lessons.stages.media.destroy", ["lesson" => $lesson->id, "stage" => "_stage_", "media" => "_mediaId_"]) }}'.replace('_stage_', stage).replace('_mediaId_', mediaId),
                 method: 'DELETE',
                 data: { _token: '{{ csrf_token() }}' },
                 success: function(response) {

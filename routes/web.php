@@ -1,40 +1,104 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Auth;
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\LessonController;
 use App\Http\Controllers\Admin\LessonStageController;
+use App\Http\Controllers\Students\LessonController as StudentLessonController;
+use App\Http\Controllers\Students\QuizController;
+use App\Http\Controllers\Students\AIChatController;
 
-Route::get('/', function () {
-    return view('auth.login');
-});
-//auth
-Route::get('/login', [AuthController::class, 'ShowLogin'])->name('login');
-Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
-Route::post('/register', [AuthController::class, 'register'])->name('register.post');
-Route::post('/login', [AuthController::class, 'login'])->name('login.submit');
+/*
+|--------------------------------------------------------------------------
+| Guest routes
+|--------------------------------------------------------------------------
+*/
 
-//dashboard routes with middleware
-Route::middleware('auth')->group(function () {
-    //admin dashboard
-    Route::get('/dashboard/home', [DashboardController::class, 'home'])->name('dashboard.home');
-});
+Route::redirect('/', '/login');
 
-Route::prefix('admin')->name('admin.')->middleware(['auth'])->group(function () {
-    Route::resource('lessons', LessonController::class)->except(['show']);
-    Route::get('lessons', [LessonController::class, 'index'])->name('lessons.index');
-    Route::get('lessons/create', [LessonController::class, 'create'])->name('lessons.create');
-    Route::get('lessons/{lesson}/edit', [LessonController::class, 'edit'])->name('lessons.edit');
-    Route::post('lessons/{lesson}/stages/{stage}/text', [LessonStageController::class, 'updateText'])->name('lessons.stages.text');
-    Route::post('lessons/{lesson}/stages/{stage}/media', [LessonStageController::class, 'uploadMedia'])->name('lessons.stages.media');
-    Route::delete('lessons/media/{media}', [LessonStageController::class, 'destroyMedia'])->name('lessons.media.destroy');
+Route::middleware('guest')->group(function () {
+    Route::get('/login',    [AuthController::class, 'showLogin'])->name('login');
+    Route::post('/login',   [AuthController::class, 'login'])->name('login.submit');
+
+    Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
+    Route::post('/register',[AuthController::class, 'register'])->name('register.store');
 });
 
-Route::post('/logout', function () {
-    Auth::logout();
-    request()->session()->invalidate();
-    request()->session()->regenerateToken();
-    return redirect('/login');
-})->name('logout');
+Route::post('/logout', [AuthController::class, 'logout'])
+    ->middleware('auth')
+    ->name('logout');
+
+/*
+|--------------------------------------------------------------------------
+| Admin routes
+|--------------------------------------------------------------------------
+*/
+
+Route::prefix('admin')
+    ->name('admin.')
+    ->middleware(['auth', 'role:admin'])   // swap in your actual role middleware
+    ->group(function () {
+
+        Route::get('/dashboard', [AdminDashboardController::class, 'index'])
+            ->name('dashboard');
+
+        // Lessons — exclude 'show' since admins manage, not view
+        Route::resource('lessons', LessonController::class)
+            ->except(['show']);
+
+        // Lesson stages — scoped under a lesson
+        Route::prefix('lessons/{lesson}/stages')
+            ->name('lessons.stages.')
+            ->group(function () {
+                Route::get('/', [LessonStageController::class, 'index'])
+                    ->name('index');
+                Route::post('/', [LessonStageController::class, 'store'])
+                    ->name('store');
+                Route::get('/{stage}', [LessonStageController::class, 'show'])
+                    ->name('show');
+                Route::patch('/{stage}', [LessonStageController::class, 'update'])
+                    ->name('update');
+                Route::delete('/{stage}', [LessonStageController::class, 'destroy'])
+                    ->name('destroy');
+                Route::post('/{stage}/text', [LessonStageController::class, 'updateText'])
+                    ->name('text');
+                Route::post('/{stage}/media', [LessonStageController::class, 'uploadMedia'])
+                    ->name('media.store');
+                Route::delete('/{stage}/media/{media}', [LessonStageController::class, 'destroyMedia'])
+                    ->name('media.destroy');
+            });
+    });
+
+/*
+|--------------------------------------------------------------------------
+| Student routes
+|--------------------------------------------------------------------------
+*/
+
+Route::prefix('student')
+    ->name('student.')
+    ->middleware(['auth', 'role:student'])  // swap in your actual role middleware
+    ->group(function () {
+
+        // Lessons
+        Route::get('/lessons',         [StudentLessonController::class, 'index'])
+            ->name('lessons.index');
+        Route::get('/lessons/{lesson}', [StudentLessonController::class, 'show'])
+            ->name('lessons.show');
+
+        // Stage progress
+        Route::post('/lessons/{lesson}/stages/{stage}/complete',
+            [StudentLessonController::class, 'completeStage'])
+            ->name('lessons.stages.complete');  // consistent plural 'stages' //student.lessons.quiz.submit
+
+        // Quiz — own controller, own namespace
+        Route::post('/lessons/{lesson}/quiz',
+            [QuizController::class, 'submit'])
+            ->name('lessons.quiz.submit');
+
+        // AI Chat
+        Route::post('/lessons/{lesson}/ai/ask',
+            [AIChatController::class, 'ask'])
+            ->name('lessons.ai.ask');
+    });

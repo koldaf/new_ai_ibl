@@ -23,17 +23,16 @@ class AuthController extends Controller
             'password' => 'required|string',
         ]);
          if(Auth::attempt($credentials, $request->filled('remember'))){
-            //regenerate session to prevent fixation attacks
+            // regenerate session to prevent fixation attacks
             $request->session()->regenerate();
-            //check user role;
-            if(Auth::user()->role == 'admin' || Auth::user()->role == 'admin'){
-                return redirect()->intended('dashboard/home');
-            }else{
-                return redirect()->intended('dashboard/students');
-            }
-            //redirect to dashboard
-            //return redirect()->intended('dashboard');
 
+            // redirect based on role; the route middleware will also enforce this
+            $user = Auth::user();
+            if ($user->hasRole('admin')) {
+                return redirect()->intended(route('admin.dashboard'));
+            }
+
+            return redirect()->intended(route('student.lessons.index'));
         }
 
         return back()->withErrors([
@@ -71,6 +70,16 @@ class AuthController extends Controller
 
         // Redirect to login page after successful registration
         return redirect()->route('login')->with('success', 'Registration successful. Please log in.');
+    }
+
+    public function logout(Request $request)
+    {
+        Auth::logout();
+
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return redirect()->route('login');
     }
    
 }

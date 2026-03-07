@@ -2,10 +2,14 @@
 
 namespace App\Models;
 
+
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Models\LessonProgress;
+use App\Models\QuizAttempt;
 
 class User extends Authenticatable
 {
@@ -20,6 +24,7 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'password',
+        'role', // student/teacher/admin
     ];
 
     /**
@@ -43,5 +48,33 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    public function lessonProgress()
+    {
+        return $this->hasMany(LessonProgress::class);
+    }
+
+    public function quizAttempts()
+    {
+        return $this->hasMany(QuizAttempt::class);
+    }
+
+    /**
+     * Check if the user has a given role. The provided role string may
+     * contain pipes to indicate alternatives (e.g. 'admin|teacher').
+     */
+    public function hasRole(string $role): bool
+    {
+        $roles = explode('|', $role);
+        return in_array($this->role, $roles, true);
+    }
+
+    /**
+     * Convenience helper for common checks. You can add more as needed.
+     */
+    public function isAdmin(): bool
+    {
+        return $this->role === 'admin';
     }
 }

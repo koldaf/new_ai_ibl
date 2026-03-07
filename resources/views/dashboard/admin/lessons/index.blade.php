@@ -20,9 +20,10 @@
             </tr>
         </thead>
         <tbody>
+            @php $i = 0; @endphp
             @foreach($lessons as $lesson)
             <tr>
-                <td>{{ $lesson->id }}</td>
+                <td>{{ ++$i }}</td>
                 <td>{{ $lesson->title }}</td>
                 <td>{{ $lesson->subject }}</td>
                 <td>{{ $lesson->grade_level }}</td>
