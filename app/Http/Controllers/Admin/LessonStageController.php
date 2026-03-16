@@ -200,4 +200,10 @@ class LessonStageController extends Controller
             'message' => 'Media deleted successfully.'
         ]);
     }
+
+    //Misconception
+    public function storeMisconception(Request $request, Lesson $lesson, $stage)
+    {
+        
+    }
 }

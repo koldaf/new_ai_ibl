@@ -51,6 +51,11 @@ class LessonController extends Controller
         return view('dashboard.student.lessons.show', compact('lesson', 'progress', 'stageData', 'stages', 'quizQuestions', 'previousAttempts'));
     }
 
+    public function completeStage(Request $request, Lesson $lesson, string $stage)
+    {
+        return $this->markStageComplete($request, $lesson, $stage);
+    }
+
     public function markStageComplete(Request $request, Lesson $lesson, $stage)
     {
         $validStages = ['engage', 'explore', 'explain', 'elaborate', 'evaluate'];

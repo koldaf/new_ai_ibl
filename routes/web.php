@@ -67,6 +67,11 @@ Route::prefix('admin')
                     ->name('media.store');
                 Route::delete('/{stage}/media/{media}', [LessonStageController::class, 'destroyMedia'])
                     ->name('media.destroy');
+                Route::post('/{stage}/quiz', [LessonStageController::class, 'updateQuiz'])
+                    ->name('quiz');
+               //Misconception  admin.lessons.stages.misconceptions.store
+                Route::post('/{stage}/misconceptions', [LessonStageController::class, 'storeMisconception'])
+                    ->name('misconceptions.store');
             });
     });
 

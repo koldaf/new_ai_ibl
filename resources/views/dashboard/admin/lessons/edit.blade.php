@@ -134,6 +134,9 @@
                                 <p class="no-media">No media uploaded yet.</p>
                                 @endforelse
                             </div>
+
+                            <!-- Add misconception multiple choice questions for all stages -->
+                            
                         </div>
                     </div>
                 </div>

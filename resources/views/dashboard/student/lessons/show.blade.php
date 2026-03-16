@@ -207,6 +207,7 @@ $(document).ready(function() {
                 alert('Stage marked as complete!');
             },
             error: function(xhr) {
+                console.error(xhr);
                 alert('Error: ' + xhr.responseJSON.error);
             }
         });
