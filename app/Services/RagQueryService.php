@@ -141,6 +141,80 @@ class RagQueryService
     }
 
     /**
+     * Safely retrieve relevant context for callers that need graceful fallback.
+     */
+    public function retrieveContextSafe(Lesson $lesson, string $query, int $topK = 5): string
+    {
+        try {
+            return $this->retrieveContext($lesson, $query, $topK);
+        } catch (\Throwable $e) {
+            Log::warning('[RAG Query] Safe context retrieval returned empty result', [
+                'lesson_id' => $lesson->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return '';
+        }
+    }
+
+    /**
+     * Generic Ollama LLM call for internal and cross-service use.
+     */
+    public function callLlm(string $prompt, string $system, int $maxTokens = 80): string
+    {
+        try {
+            $response = Http::timeout(180)
+                ->post("{$this->ollamaUrl}/api/generate", [
+                    'model' => $this->llmModel,
+                    'prompt' => $prompt,
+                    'system' => $system,
+                    'stream' => false,
+                    'options' => [
+                        'temperature' => 0.1,
+                        'num_predict' => $maxTokens,
+                    ],
+                ]);
+
+            if ($response->failed()) {
+                throw new \RuntimeException(
+                    "Ollama API request failed: {$response->body()}"
+                );
+            }
+
+            $data = $response->json();
+
+            if (!isset($data['response'])) {
+                throw new \RuntimeException(
+                    'Unexpected response format from Ollama'
+                );
+            }
+
+            return trim($data['response']);
+
+        } catch (\Throwable $e) {
+            Log::error('[RAG Query] LLM generation failed', [
+                'error' => $e->getMessage(),
+                'ollama_url' => $this->ollamaUrl,
+                'model' => $this->llmModel,
+            ]);
+
+            if (str_contains($e->getMessage(), 'timed out') || str_contains($e->getMessage(), 'cURL error 28')) {
+                throw new \RuntimeException(
+                    "Ollama service is not responding. This may be because:\n" .
+                    "1. Ollama is still loading the model (first-time use can take 1-3 minutes)\n" .
+                    "2. Ollama service is not running\n" .
+                    "3. The model '{$this->llmModel}' is not available\n" .
+                    'Please check that Ollama is running and try again.'
+                );
+            }
+
+            throw new \RuntimeException(
+                "Failed to generate response: {$e->getMessage()}"
+            );
+        }
+    }
+
+    /**
      * Generate a response using Ollama's LLM with the given context.
      *
      * @param string $query The user's question
@@ -157,59 +231,7 @@ class RagQueryService
 
         $userPrompt = "<CONTEXT>\n{$context}\n</CONTEXT>\n\nQuestion: {$query}";
 
-        try {
-            // Increased timeout to 3 minutes for model loading and generation
-            // First-time model loads can take 30-120 seconds depending on model size
-            $response = Http::timeout(180)
-                ->post("{$this->ollamaUrl}/api/generate", [
-                    'model' => $this->llmModel,
-                    'prompt' => $userPrompt,
-                    'system' => $system,
-                    'stream' => false,
-                    'options' => [
-                        'temperature' => 0.1,
-                        'num_predict' => 80,
-                    ],
-                ]);
-
-            if ($response->failed()) {
-                throw new \RuntimeException(
-                    "Ollama API request failed: {$response->body()}"
-                );
-            }
-
-            $data = $response->json();
-
-            if (!isset($data['response'])) {
-                throw new \RuntimeException(
-                    "Unexpected response format from Ollama"
-                );
-            }
-
-            return trim($data['response']);
-
-        } catch (\Throwable $e) {
-            Log::error('[RAG Query] LLM generation failed', [
-                'error' => $e->getMessage(),
-                'ollama_url' => $this->ollamaUrl,
-                'model' => $this->llmModel,
-            ]);
-
-            // Check if it's a timeout or connection issue
-            if (str_contains($e->getMessage(), 'timed out') || str_contains($e->getMessage(), 'cURL error 28')) {
-                throw new \RuntimeException(
-                    "Ollama service is not responding. This may be because:\n" .
-                    "1. Ollama is still loading the model (first-time use can take 1-3 minutes)\n" .
-                    "2. Ollama service is not running\n" .
-                    "3. The model '{$this->llmModel}' is not available\n" .
-                    "Please check that Ollama is running and try again."
-                );
-            }
-
-            throw new \RuntimeException(
-                "Failed to generate response: {$e->getMessage()}"
-            );
-        }
+        return $this->callLlm($userPrompt, $system, 80);
     }
 
     /**
@@ -309,6 +331,11 @@ class RagQueryService
     {
         try {
             $response = Http::timeout(5)->get("{$this->ollamaUrl}/api/tags");
+            Log::debug('[RAG] Ollama health check response', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+                'success' => $response->successful(),
+            ]);
             return $response->successful();
         } catch (\Throwable $e) {
             Log::warning('[RAG] Ollama health check failed', [

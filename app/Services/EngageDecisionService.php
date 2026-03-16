@@ -7,11 +7,16 @@ use App\Models\Lesson;
 use App\Models\LessonMisconception;
 use App\Models\MisconceptionEvent;
 use App\Models\User;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class EngageDecisionService
 {
     private const MAX_FOLLOWUPS = 2;
+
+    public function __construct(private readonly RagQueryService $ragService)
+    {
+    }
 
     public function assessAnswer(Lesson $lesson, User $user, string $answer): array
     {
@@ -30,7 +35,22 @@ class EngageDecisionService
         $turnIndex = (int) $history->count() + 1;
 
         $templateMatch = $this->detectTemplateMisconception($lesson->id, $answer);
-        [$classification, $confidence] = $this->classify($answer, $contextText, $templateMatch !== null);
+        $ragDecision = null;
+        $usedVectorRetrieval = false;
+
+        if ($templateMatch !== null) {
+            [$classification, $confidence] = ['misconception', 0.82];
+        } else {
+            $ragDecision = $this->classifyWithRag($lesson, $answer);
+
+            if ($ragDecision !== null) {
+                $classification = $ragDecision['classification'];
+                $confidence = $ragDecision['confidence'];
+                $usedVectorRetrieval = true;
+            } else {
+                [$classification, $confidence] = $this->classify($answer, $contextText, false);
+            }
+        }
 
         $followupsUsed = (int) $history->filter(fn (AiChatMessage $row) => !empty($row->follow_up_question))->count();
         $needsFollowup = in_array($classification, ['partial', 'misconception', 'off_topic'], true);
@@ -46,7 +66,8 @@ class EngageDecisionService
             $engageStatus = 'review_needed';
             $completionReason = 'max_followups_reached';
         } elseif ($needsFollowup) {
-            $followUpQuestion = $this->buildFollowupQuestion($classification, $contextText, $answer);
+            $followUpQuestion = $ragDecision['follow_up']
+                ?? $this->buildFollowupQuestion($classification, $contextText, $answer);
         }
 
         [$misconceptionId, $misconceptionSource] = $this->persistMisconception(
@@ -58,7 +79,8 @@ class EngageDecisionService
             $templateMatch
         );
 
-        $feedback = $this->buildFeedback($classification, $contextText, $followUpQuestion);
+        $feedback = $ragDecision['feedback']
+            ?? $this->buildFeedback($classification, $contextText, $followUpQuestion);
 
         return [
             'classification' => $classification,
@@ -70,18 +92,123 @@ class EngageDecisionService
             'engage_status' => $engageStatus,
             'completion_reason' => $completionReason,
             'turn_index' => $turnIndex,
-            'context_source' => $contextText !== '' ? 'stage_text' : 'none',
-            'retrieval_mode' => $contextText !== '' ? 'non_vector' : 'none',
+            'context_source' => $usedVectorRetrieval
+                ? 'rag'
+                : ($contextText !== '' ? 'stage_text' : 'none'),
+            'retrieval_mode' => $usedVectorRetrieval
+                ? 'vector'
+                : ($contextText !== '' ? 'non_vector' : 'none'),
             'answer' => $followUpQuestion
                 ? $feedback . ' Follow-up: ' . $followUpQuestion
                 : $feedback,
         ];
     }
 
+    private function classifyWithRag(Lesson $lesson, string $answer): ?array
+    {
+        if (str_word_count($answer) < 4) {
+            return null;
+        }
+
+        if (!$this->ragService->isReady($lesson->id) || !$this->ragService->isOllamaHealthy()) {
+            Log::warning('[EngageDecision] RAG service not ready or Ollama unhealthy, skipping RAG classification', [
+                'lesson_id' => $lesson->id,
+                'RAG Status' => $this->ragService->isOllamaHealthy(),
+            ]);
+            return null;
+        }
+
+        try {
+            $context = $this->ragService->retrieveContextSafe($lesson, $answer, 4);
+            if ($context === '') {
+                return null;
+            }
+
+            $system = 'You are an educational assistant for engage-stage formative assessment. ' .
+                'Return only valid JSON. No markdown, no explanation.';
+
+            $prompt = "Classify the student answer using the lesson context.\n\n" .
+                "Allowed classification values: correct, partial, misconception, off_topic.\n" .
+                "Confidence must be a number between 0 and 1.\n" .
+                "Feedback should be one concise sentence.\n" .
+                "Follow-up should be null when classification is correct; otherwise ask one short coaching question.\n\n" .
+                "Return exactly this JSON shape:\n" .
+                "{\"classification\":\"correct|partial|misconception|off_topic\",\"confidence\":0.0,\"feedback\":\"...\",\"follow_up\":\"... or null\"}\n\n" .
+                "Lesson context:\n<CONTEXT>\n{$context}\n</CONTEXT>\n\n" .
+                "Student answer: {$answer}";
+
+            $raw = trim($this->ragService->callLlm($prompt, $system, 200));
+            $decoded = $this->decodeRagJson($raw);
+
+            if (!is_array($decoded)) {
+                return null;
+            }
+
+            $classification = (string) ($decoded['classification'] ?? '');
+            $valid = ['correct', 'partial', 'misconception', 'off_topic'];
+
+            if (!in_array($classification, $valid, true)) {
+                return null;
+            }
+
+            $confidence = (float) ($decoded['confidence'] ?? 0.5);
+            $confidence = max(0.0, min(1.0, $confidence));
+
+            $feedback = trim((string) ($decoded['feedback'] ?? ''));
+            if ($feedback === '') {
+                return null;
+            }
+
+            $followUp = $decoded['follow_up'] ?? null;
+            if (is_string($followUp)) {
+                $followUp = trim($followUp);
+                if ($followUp === '') {
+                    $followUp = null;
+                }
+            } else {
+                $followUp = null;
+            }
+
+            return [
+                'classification' => $classification,
+                'confidence' => $confidence,
+                'feedback' => $feedback,
+                'follow_up' => $followUp,
+            ];
+        } catch (\Throwable $e) {
+            Log::warning('[EngageDecision] RAG classification failed, using fallback rules', [
+                'lesson_id' => $lesson->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    private function decodeRagJson(string $raw): ?array
+    {
+        $clean = trim($raw);
+        $clean = preg_replace('/^```(?:json)?\s*/i', '', $clean) ?? $clean;
+        $clean = preg_replace('/\s*```$/', '', $clean) ?? $clean;
+
+        $start = strpos($clean, '{');
+        $end = strrpos($clean, '}');
+
+        if ($start === false || $end === false || $end < $start) {
+            return null;
+        }
+
+        $candidate = substr($clean, $start, $end - $start + 1);
+        $decoded = json_decode($candidate, true);
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
     public function generateStartQuestion(Lesson $lesson): array
     {
         $stageContent = optional($lesson->getStageContent('engage'))->content;
         $contextText = trim(strip_tags((string) $stageContent));
+        
 
         $topic = $this->deriveTopic($contextText);
 
@@ -97,8 +224,18 @@ class EngageDecisionService
             ];
         }
 
-        $snippet = Str::limit($contextText, 160, '...');
-        $question = "Based on this scenario: {$snippet} What do you already know about {$topic}?";
+        $snippet = Str::limit($contextText, 50, '...');
+        if (str_contains($stageContent, '?')) {
+            $clean = preg_replace('/<p[^>]*>/', '', $stageContent);     // remove <p>
+            $clean = preg_replace('/<\/p>/', "\n\n", $clean);      // </p> → newline
+            $clean = preg_replace('/<br[^>]*>/', "\n", $clean);    // <br> → newline
+            $clean = strip_tags($clean); // remove any remaining HTML
+            $clean = preg_replace('/[.:]/', '', $clean); // remove colons and periods
+            $lines = array_filter(array_map('trim', explode("\n", $clean)));
+            $question = end($lines) ?: "Based on this scenario: {$snippet} What do you already know about {$topic}?";
+        } else {
+            $question = "Based on this scenario: {$snippet} What do you already know about {$topic}?";
+        }
 
         return [
             'answer' => $question,

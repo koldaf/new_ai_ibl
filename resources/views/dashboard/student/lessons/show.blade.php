@@ -336,6 +336,22 @@ $(document).ready(function() {
         );
     }
 
+    function showEngageAssistantLoading() {
+        removeEngageAssistantLoading();
+        $('#engage-chat-placeholder').remove();
+        $('#engage-chat-messages').append(
+            '<div class="text-start mb-2" id="engage-assistant-loading"><span class="bg-white border p-2 rounded d-inline-block">' +
+                '<span class="typing-loader-label">Denzy is typing</span>' +
+                '<span class="typing-loader-dots"><span>.</span><span>.</span><span>.</span></span>' +
+            '</span></div>'
+        );
+        scrollToBottom('#engage-chat-messages');
+    }
+
+    function removeEngageAssistantLoading() {
+        $('#engage-assistant-loading').remove();
+    }
+
     function appendFloatingAssistantMessage(text, response) {
         var extra = '';
 
@@ -351,12 +367,28 @@ $(document).ready(function() {
         $('#chat-messages').append('<div class="text-start mb-2"><span class="bg-light p-2 rounded d-inline-block">' + text + extra + '</span></div>');
     }
 
+    function showFloatingAssistantLoading() {
+        removeFloatingAssistantLoading();
+        $('#chat-messages').append(
+            '<div class="text-start mb-2" id="floating-assistant-loading"><span class="bg-light p-2 rounded d-inline-block">' +
+                '<span class="typing-loader-label">Denzy is typing</span>' +
+                '<span class="typing-loader-dots"><span>.</span><span>.</span><span>.</span></span>' +
+            '</span></div>'
+        );
+        scrollToBottom('#chat-messages');
+    }
+
+    function removeFloatingAssistantLoading() {
+        $('#floating-assistant-loading').remove();
+    }
+
     function requestEngageStart() {
         if (engageStarted) {
             return;
         }
 
         engageStarted = true;
+        showEngageAssistantLoading();
 
         $.ajax({
             url: '{{ route("student.lessons.ai.ask", $lesson) }}',
@@ -368,13 +400,16 @@ $(document).ready(function() {
                 intent: 'start'
             },
             success: function(response) {
+                removeEngageAssistantLoading();
                 appendEngageAssistantMessage(response.answer, response);
                 scrollToBottom('#engage-chat-messages');
             },
             error: function(xhr) {
+                removeEngageAssistantLoading();
                 var message = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Unable to start engage flow';
                 $('#engage-chat-placeholder').remove();
                 $('#engage-chat-messages').append('<div class="text-start mb-2 text-danger">Error: ' + escapeHtml(message) + '</div>');
+                scrollToBottom('#engage-chat-messages');
             }
         });
     }
@@ -447,6 +482,7 @@ $(document).ready(function() {
 
         appendEngageStudentMessage(question);
         $('#engage-chat-input').val('');
+        showEngageAssistantLoading();
 
         $.ajax({
             url: '{{ route("student.lessons.ai.ask", $lesson) }}',
@@ -459,10 +495,12 @@ $(document).ready(function() {
             },
             success: function(response) {
                 engageStarted = true;
+                removeEngageAssistantLoading();
                 appendEngageAssistantMessage(response.answer, response);
                 scrollToBottom('#engage-chat-messages');
             },
             error: function(xhr) {
+                removeEngageAssistantLoading();
                 var message = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Unknown error';
                 $('#engage-chat-messages').append('<div class="text-start mb-2 text-danger">Error: ' + escapeHtml(message) + '</div>');
                 scrollToBottom('#engage-chat-messages');
@@ -480,6 +518,7 @@ $(document).ready(function() {
         var messagesDiv = $('#chat-messages');
         messagesDiv.append('<div class="text-end mb-2"><span class="bg-primary text-white p-2 rounded">' + question + '</span></div>');
         $('#chat-input').val('');
+        showFloatingAssistantLoading();
 
         $.ajax({
             url: '{{ route("student.lessons.ai.ask", $lesson) }}',
@@ -491,10 +530,12 @@ $(document).ready(function() {
                 intent: intent
             },
             success: function(response) {
+                removeFloatingAssistantLoading();
                 appendFloatingAssistantMessage(response.answer, response);
                 messagesDiv.scrollTop(messagesDiv[0].scrollHeight);
             },
             error: function(xhr) {
+                removeFloatingAssistantLoading();
                 messagesDiv.append('<div class="text-start mb-2 text-danger">Error: ' + (xhr.responseJSON.message || 'Unknown error') + '</div>');
             }
         });
@@ -521,4 +562,39 @@ $(document).ready(function() {
 
 @push('styles')
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+<style>
+    .typing-loader-label {
+        font-weight: 500;
+    }
+
+    .typing-loader-dots {
+        display: inline-block;
+        min-width: 18px;
+    }
+
+    .typing-loader-dots span {
+        opacity: 0.25;
+        animation: typingDots 1.2s infinite;
+    }
+
+    .typing-loader-dots span:nth-child(2) {
+        animation-delay: 0.2s;
+    }
+
+    .typing-loader-dots span:nth-child(3) {
+        animation-delay: 0.4s;
+    }
+
+    @keyframes typingDots {
+        0%,
+        80%,
+        100% {
+            opacity: 0.25;
+        }
+
+        40% {
+            opacity: 1;
+        }
+    }
+</style>
 @endpush
