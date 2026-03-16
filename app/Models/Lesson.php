@@ -47,4 +47,9 @@ class Lesson extends Model
     {
         return $this->hasMany(LessonProgress::class);
     }
+
+    public function misconceptions()
+    {
+        return $this->hasMany(LessonMisconception::class);
+    }
 }

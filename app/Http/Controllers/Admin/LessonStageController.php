@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Lesson;
 use App\Models\LessonMedia;
+use App\Models\LessonMisconception;
 use App\Models\LessonStageContent;
 use App\Models\QuizQuestion;
 use Illuminate\Http\Request;
@@ -13,6 +14,8 @@ use Illuminate\Validation\Rule;
 
 class LessonStageController extends Controller
 {
+    private const VALID_STAGES = ['engage', 'explore', 'explain', 'elaborate', 'evaluate'];
+
     /**
      * Update the text content for a stage.
      */
@@ -24,7 +27,7 @@ class LessonStageController extends Controller
         ]);
 
         // Ensure stage is valid
-        if (!in_array($stage, ['engage', 'explore', 'explain', 'elaborate', 'evaluate'])) {
+        if (!$this->isValidStage($stage)) {
             return response()->json(['error' => 'Invalid stage'], 422);
         }
 
@@ -55,7 +58,7 @@ class LessonStageController extends Controller
         ]);
 
         // Validate stage
-        if (!in_array($stage, ['engage', 'explore', 'explain', 'elaborate', 'evaluate'])) {
+        if (!$this->isValidStage($stage)) {
             return response()->json(['error' => 'Invalid stage'], 422);
         }
 
@@ -204,6 +207,92 @@ class LessonStageController extends Controller
     //Misconception
     public function storeMisconception(Request $request, Lesson $lesson, $stage)
     {
-        
+        if (!$this->isValidStage($stage)) {
+            return response()->json(['error' => 'Invalid stage'], 422);
+        }
+
+        $validated = $this->validateMisconception($request);
+
+        $misconception = LessonMisconception::create([
+            'lesson_id' => $lesson->id,
+            'stage' => $stage,
+            'concept_tag' => $validated['concept_tag'] ?? null,
+            'label' => $validated['label'],
+            'description' => $validated['description'] ?? null,
+            'correct_concept' => $validated['correct_concept'] ?? null,
+            'remediation_hint' => $validated['remediation_hint'] ?? null,
+            'source' => 'template',
+            'status' => $validated['status'] ?? 'approved',
+            'created_by' => $request->user()?->id,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Misconception template saved.',
+            'data' => $misconception,
+        ]);
+    }
+
+    public function updateMisconception(Request $request, Lesson $lesson, $stage, LessonMisconception $misconception)
+    {
+        if (!$this->isValidStage($stage)) {
+            return response()->json(['error' => 'Invalid stage'], 422);
+        }
+
+        if ($misconception->lesson_id !== $lesson->id || $misconception->stage !== $stage) {
+            return response()->json(['error' => 'Misconception not found for this lesson stage'], 404);
+        }
+
+        $validated = $this->validateMisconception($request);
+
+        $misconception->update([
+            'concept_tag' => $validated['concept_tag'] ?? null,
+            'label' => $validated['label'],
+            'description' => $validated['description'] ?? null,
+            'correct_concept' => $validated['correct_concept'] ?? null,
+            'remediation_hint' => $validated['remediation_hint'] ?? null,
+            'status' => $validated['status'] ?? $misconception->status,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Misconception template updated.',
+            'data' => $misconception->fresh(),
+        ]);
+    }
+
+    public function destroyMisconception(Lesson $lesson, $stage, LessonMisconception $misconception)
+    {
+        if (!$this->isValidStage($stage)) {
+            return response()->json(['error' => 'Invalid stage'], 422);
+        }
+
+        if ($misconception->lesson_id !== $lesson->id || $misconception->stage !== $stage) {
+            return response()->json(['error' => 'Misconception not found for this lesson stage'], 404);
+        }
+
+        $misconception->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Misconception template deleted.',
+        ]);
+    }
+
+    private function validateMisconception(Request $request): array
+    {
+        return $request->validate([
+            'concept_tag' => 'nullable|string|max:100',
+            'label' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'correct_concept' => 'nullable|string',
+            'remediation_hint' => 'nullable|string',
+            'status' => ['nullable', Rule::in(['pending_review', 'approved', 'rejected'])],
+        ]);
+    }
+
+    private function isValidStage(string $stage): bool
+    {
+        return in_array($stage, self::VALID_STAGES, true);
     }
 }

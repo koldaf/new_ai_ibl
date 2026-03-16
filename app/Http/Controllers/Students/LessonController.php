@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Students;
 
 use App\Http\Controllers\Controller;
+use App\Models\AiChatMessage;
 use App\Models\Lesson;
 use App\Models\LessonProgress;
 use App\Models\QuizAttempt;
@@ -39,6 +40,16 @@ class LessonController extends Controller
             ];
         }
 
+        $engageMessages = AiChatMessage::query()
+            ->where('user_id', Auth::id())
+            ->where('lesson_id', $lesson->id)
+            ->where('stage', 'engage')
+            ->orderBy('id')
+            ->get();
+
+        $latestEngageMessage = $engageMessages->last();
+        $canMarkEngageComplete = $latestEngageMessage?->engage_status === 'complete';
+
         // Load quiz questions for evaluate stage
         $quizQuestions = $lesson->quizQuestions()->get();
 
@@ -48,7 +59,16 @@ class LessonController extends Controller
             ->get()
             ->keyBy('question_id');
 
-        return view('dashboard.student.lessons.show', compact('lesson', 'progress', 'stageData', 'stages', 'quizQuestions', 'previousAttempts'));
+        return view('dashboard.student.lessons.show', compact(
+            'lesson',
+            'progress',
+            'stageData',
+            'stages',
+            'quizQuestions',
+            'previousAttempts',
+            'engageMessages',
+            'canMarkEngageComplete'
+        ));
     }
 
     public function completeStage(Request $request, Lesson $lesson, string $stage)
@@ -66,6 +86,21 @@ class LessonController extends Controller
         $progress = LessonProgress::where('user_id', Auth::id())
             ->where('lesson_id', $lesson->id)
             ->firstOrFail();
+
+        if ($stage === 'engage') {
+            $latestEngageMessage = AiChatMessage::query()
+                ->where('user_id', Auth::id())
+                ->where('lesson_id', $lesson->id)
+                ->where('stage', 'engage')
+                ->latest('id')
+                ->first();
+
+            if (!$latestEngageMessage || $latestEngageMessage->engage_status !== 'complete') {
+                return response()->json([
+                    'error' => 'Complete the Engage discussion with AI before marking this stage as complete.',
+                ], 422);
+            }
+        }
 
         $field = $stage . '_completed';
         $progress->$field = true;

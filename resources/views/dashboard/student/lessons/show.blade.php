@@ -118,9 +118,76 @@
                 </div>
             @endif
 
+            @if($stage === 'engage')
+                <div class="card mb-4 shadow-sm border-0">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <span class="fw-semibold">Engage Discussion</span>
+                        <span class="badge bg-secondary" id="engage-status-badge">
+                            {{ $canMarkEngageComplete ? 'Ready to complete' : 'Discussion in progress' }}
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        <div id="engage-chat-messages" class="border rounded bg-light p-3 mb-3" style="max-height: 380px; overflow-y: auto;">
+                            @forelse($engageMessages as $message)
+                                @if($message->question && $message->question !== '__engage_start__')
+                                    <div class="text-end mb-2">
+                                        <span class="bg-primary text-white p-2 rounded d-inline-block">{!! nl2br(e($message->question)) !!}</span>
+                                    </div>
+                                @endif
+
+                                <div class="text-start mb-2">
+                                    <span class="bg-white border p-2 rounded d-inline-block">
+                                        {!! nl2br(e($message->answer)) !!}
+                                        @if($message->classification)
+                                            <span class="d-block small text-muted mt-1">
+                                                Class: {{ ucfirst(str_replace('_', ' ', $message->classification)) }}
+                                                @if(!is_null($message->confidence))
+                                                    ({{ (int) round($message->confidence * 100) }}%)
+                                                @endif
+                                            </span>
+                                        @endif
+                                        @if($message->engage_status)
+                                            <span class="d-block small text-muted">Status: {{ ucfirst(str_replace('_', ' ', $message->engage_status)) }}</span>
+                                        @endif
+                                    </span>
+                                </div>
+                            @empty
+                                <div class="alert alert-info mb-0" id="engage-chat-placeholder">
+                                    Denzy will start the Engage discussion here.
+                                </div>
+                            @endforelse
+                        </div>
+
+                        @if(!$progress->engage_completed)
+                            <form id="engage-chat-form">
+                                @csrf
+                                <div class="mb-3">
+                                    <label for="engage-chat-input" class="form-label">Your response</label>
+                                    <textarea id="engage-chat-input" class="form-control" rows="4" placeholder="Respond to the scenario or Denzy's question here..." required></textarea>
+                                </div>
+                                <button class="btn btn-primary" type="submit">Send Response</button>
+                            </form>
+                        @endif
+                    </div>
+                </div>
+            @endif
+
             <!-- Mark as Complete Button (except evaluate if not done yet) -->
             @if(!$progress->{$stage.'_completed'} && $stage != 'evaluate')
-                <button class="btn btn-success mark-complete" data-stage="{{ $stage }}">Mark {{ ucfirst($stage) }} as Complete</button>
+                @if($stage === 'engage')
+                    <div class="mb-2 small text-muted" id="engage-complete-helper">
+                        @if($canMarkEngageComplete)
+                            Denzy has marked this Engage discussion as ready for completion.
+                        @else
+                            Continue the Engage discussion until Denzy marks it ready for completion.
+                        @endif
+                    </div>
+                    <button class="btn btn-success mark-complete" data-stage="{{ $stage }}" id="engage-complete-button" {{ $canMarkEngageComplete ? '' : 'disabled' }}>
+                        Mark {{ ucfirst($stage) }} as Complete
+                    </button>
+                @else
+                    <button class="btn btn-success mark-complete" data-stage="{{ $stage }}">Mark {{ ucfirst($stage) }} as Complete</button>
+                @endif
             @elseif($stage == 'evaluate' && $quizQuestions->count() > 0 && !$progress->evaluate_completed)
                 <p class="text-info">Complete the quiz above to finish this lesson.</p>
             @elseif($stage == 'evaluate' && $progress->evaluate_completed)
@@ -132,7 +199,7 @@
 </div>
 
 <!-- Floating AI Chat Button -->
-<div style="position: fixed; top: 80%; left: 90%; z-index: 1000;">
+<div id="ai-chat-widget" style="position: fixed; top: 80%; left: 90%; z-index: 1000;">
     <div style="width: 300px; position: absolute; top: -480px; left: -220px; overflow-x:hidden; display:none" id="ai-chat-container" class="card alert-danger border-2 rounded">
         <div class="bg-dark text-light text-center h6 m-0 p-3 border-bottom">
             <i class="fas fa-robot fa-2x me-3"></i>
@@ -190,6 +257,127 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 $(document).ready(function() {
+    var engageStarted = {{ $engageMessages->isNotEmpty() ? 'true' : 'false' }};
+
+    function activeStage() {
+        return $('.nav-link.active').data('bs-target').substring(1);
+    }
+
+    function escapeHtml(text) {
+        return $('<div>').text(text || '').html();
+    }
+
+    function scrollToBottom(selector) {
+        var container = $(selector);
+
+        if (container.length) {
+            container.scrollTop(container[0].scrollHeight);
+        }
+    }
+
+    function updateDenzyVisibility() {
+        if (activeStage() === 'engage') {
+            $('#ai-chat-container').hide();
+            $('#ai-chat-widget').hide();
+            return;
+        }
+
+        $('#ai-chat-widget').show();
+    }
+
+    function updateEngageCompletionState(canComplete) {
+        var helper = $('#engage-complete-helper');
+        var badge = $('#engage-status-badge');
+        var button = $('#engage-complete-button');
+
+        if (!button.length) {
+            return;
+        }
+
+        button.prop('disabled', !canComplete);
+
+        if (canComplete) {
+            helper.text('Denzy has marked this Engage discussion as ready for completion.');
+            badge.text('Ready to complete').removeClass('bg-secondary bg-warning').addClass('bg-success');
+            return;
+        }
+
+        helper.text('Continue the Engage discussion until Denzy marks it ready for completion.');
+        badge.text('Discussion in progress').removeClass('bg-success bg-warning').addClass('bg-secondary');
+    }
+
+    function appendEngageStudentMessage(text) {
+        $('#engage-chat-placeholder').remove();
+        $('#engage-chat-messages').append(
+            '<div class="text-end mb-2"><span class="bg-primary text-white p-2 rounded d-inline-block">' +
+                escapeHtml(text).replace(/\n/g, '<br>') +
+            '</span></div>'
+        );
+    }
+
+    function appendEngageAssistantMessage(text, response) {
+        var extra = '';
+
+        if (response && response.classification) {
+            var confidence = response.confidence ? ' (' + Math.round(parseFloat(response.confidence) * 100) + '%)' : '';
+            extra += '<div class="small mt-1 text-muted">Class: ' + escapeHtml(response.classification.replace(/_/g, ' ')) + confidence + '</div>';
+        }
+
+        if (response && response.engage_status) {
+            extra += '<div class="small text-muted">Status: ' + escapeHtml(response.engage_status.replace(/_/g, ' ')) + '</div>';
+            updateEngageCompletionState(response.engage_status === 'complete');
+        }
+
+        $('#engage-chat-placeholder').remove();
+        $('#engage-chat-messages').append(
+            '<div class="text-start mb-2"><span class="bg-white border p-2 rounded d-inline-block">' +
+                escapeHtml(text).replace(/\n/g, '<br>') + extra +
+            '</span></div>'
+        );
+    }
+
+    function appendFloatingAssistantMessage(text, response) {
+        var extra = '';
+
+        if (response && response.stage === 'engage' && response.classification) {
+            var confidence = response.confidence ? ' (' + Math.round(parseFloat(response.confidence) * 100) + '%)' : '';
+            extra += '<div class="small mt-1 text-muted">Class: ' + response.classification + confidence + '</div>';
+        }
+
+        if (response && response.stage === 'engage' && response.engage_status) {
+            extra += '<div class="small text-muted">Status: ' + response.engage_status + '</div>';
+        }
+
+        $('#chat-messages').append('<div class="text-start mb-2"><span class="bg-light p-2 rounded d-inline-block">' + text + extra + '</span></div>');
+    }
+
+    function requestEngageStart() {
+        if (engageStarted) {
+            return;
+        }
+
+        engageStarted = true;
+
+        $.ajax({
+            url: '{{ route("student.lessons.ai.ask", $lesson) }}',
+            method: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}',
+                question: '__engage_start__',
+                stage: 'engage',
+                intent: 'start'
+            },
+            success: function(response) {
+                appendEngageAssistantMessage(response.answer, response);
+                scrollToBottom('#engage-chat-messages');
+            },
+            error: function(xhr) {
+                var message = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Unable to start engage flow';
+                $('#engage-chat-placeholder').remove();
+                $('#engage-chat-messages').append('<div class="text-start mb-2 text-danger">Error: ' + escapeHtml(message) + '</div>');
+            }
+        });
+    }
    
     // Mark stage as complete
     $('.mark-complete').on('click', function() {
@@ -201,6 +389,9 @@ $(document).ready(function() {
             data: { _token: '{{ csrf_token() }}' },
             success: function(response) {
                 btn.replaceWith('<span class="badge bg-success">Completed <i class="fas fa-check"></i></span>');
+                if (stage === 'engage') {
+                    $('#engage-chat-form :input').prop('disabled', true);
+                }
                 // Update tab style
                 $('#' + stage + '-tab').addClass('bg-success text-white');
                 // Optionally show success message
@@ -246,11 +437,45 @@ $(document).ready(function() {
         $('#ai-chat-container').hide('slow');
     });
 
+    $('#engage-chat-form').on('submit', function(e) {
+        e.preventDefault();
+
+        var question = $('#engage-chat-input').val();
+        if (!question.trim()) {
+            return;
+        }
+
+        appendEngageStudentMessage(question);
+        $('#engage-chat-input').val('');
+
+        $.ajax({
+            url: '{{ route("student.lessons.ai.ask", $lesson) }}',
+            method: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}',
+                question: question,
+                stage: 'engage',
+                intent: 'answer'
+            },
+            success: function(response) {
+                engageStarted = true;
+                appendEngageAssistantMessage(response.answer, response);
+                scrollToBottom('#engage-chat-messages');
+            },
+            error: function(xhr) {
+                var message = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Unknown error';
+                $('#engage-chat-messages').append('<div class="text-start mb-2 text-danger">Error: ' + escapeHtml(message) + '</div>');
+                scrollToBottom('#engage-chat-messages');
+            }
+        });
+    });
+
     $('#chat-form').on('submit', function(e) {
         e.preventDefault();
         var question = $('#chat-input').val();
         if (!question.trim()) return;
-        var stage = $('.nav-link.active').data('bs-target').substring(1); // get current stage from active tab
+        var stage = activeStage(); // get current stage from active tab
+        var intent = stage === 'engage' ? 'answer' : 'ask';
 
         var messagesDiv = $('#chat-messages');
         messagesDiv.append('<div class="text-end mb-2"><span class="bg-primary text-white p-2 rounded">' + question + '</span></div>');
@@ -262,10 +487,11 @@ $(document).ready(function() {
             data: {
                 _token: '{{ csrf_token() }}',
                 question: question,
-                stage: stage
+                stage: stage,
+                intent: intent
             },
             success: function(response) {
-                messagesDiv.append('<div class="text-start mb-2"><span class="bg-light p-2 rounded">' + response.answer + '</span></div>');
+                appendFloatingAssistantMessage(response.answer, response);
                 messagesDiv.scrollTop(messagesDiv[0].scrollHeight);
             },
             error: function(xhr) {
@@ -273,6 +499,22 @@ $(document).ready(function() {
             }
         });
     });
+
+    $('button[data-bs-toggle="tab"]').on('shown.bs.tab', function() {
+        updateDenzyVisibility();
+
+        if (activeStage() === 'engage' && !engageStarted) {
+            requestEngageStart();
+        }
+    });
+
+    updateDenzyVisibility();
+    updateEngageCompletionState({{ $canMarkEngageComplete ? 'true' : 'false' }});
+    scrollToBottom('#engage-chat-messages');
+
+    if (activeStage() === 'engage' && !engageStarted) {
+        requestEngageStart();
+    }
 });
 </script>
 @endpush

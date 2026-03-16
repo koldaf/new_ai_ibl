@@ -72,6 +72,10 @@ Route::prefix('admin')
                //Misconception  admin.lessons.stages.misconceptions.store
                 Route::post('/{stage}/misconceptions', [LessonStageController::class, 'storeMisconception'])
                     ->name('misconceptions.store');
+                Route::patch('/{stage}/misconceptions/{misconception}', [LessonStageController::class, 'updateMisconception'])
+                    ->name('misconceptions.update');
+                Route::delete('/{stage}/misconceptions/{misconception}', [LessonStageController::class, 'destroyMisconception'])
+                    ->name('misconceptions.destroy');
             });
     });
 

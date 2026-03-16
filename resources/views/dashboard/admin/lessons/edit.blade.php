@@ -127,7 +127,7 @@
                                     </div>
                                     <div>
                                         <a href="{{ $media->url }}" target="_blank" class="btn btn-sm btn-secondary">View</a>
-                                        <button class="btn btn-sm btn-danger delete-media" data-id="{{ $media->id }}">Delete</button>
+                                        <button class="btn btn-sm btn-danger delete-media" data-id="{{ $media->id }}" data-stage="{{ $stage }}">Delete</button>
                                     </div>
                                 </div>
                                 @empty
@@ -135,8 +135,97 @@
                                 @endforelse
                             </div>
 
-                            <!-- Add misconception multiple choice questions for all stages -->
-                            
+                        </div>
+                    </div>
+
+                    <div class="card mt-3">
+                        <div class="card-header">Misconception List</div>
+                        <div class="card-body">
+                            <form class="misconception-form" data-stage="{{ $stage }}">
+                                @csrf
+                                <input type="hidden" name="misconception_id" value="">
+                                <div class="row">
+                                    <div class="col-md-3 mb-3">
+                                        <label class="form-label">Concept Tag</label>
+                                        <input type="text" name="concept_tag" class="form-control" placeholder="e.g. gravity">
+                                    </div>
+                                    <div class="col-md-5 mb-3">
+                                        <label class="form-label">Misconception Label</label>
+                                        <input type="text" name="label" class="form-control" placeholder="Common wrong idea" required>
+                                    </div>
+                                    <div class="col-md-2 mb-3">
+                                        <label class="form-label">Status</label>
+                                        <select name="status" class="form-control">
+                                            <option value="approved">Approved</option>
+                                            <option value="pending_review">Pending review</option>
+                                            <option value="rejected">Rejected</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2 mb-3 d-flex align-items-end">
+                                        <button type="submit" class="btn btn-warning w-100 misconception-submit">Add Item</button>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Description</label>
+                                        <textarea name="description" class="form-control" rows="2" placeholder="Describe the misconception students may show."></textarea>
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <label class="form-label">Correct Concept</label>
+                                        <textarea name="correct_concept" class="form-control" rows="2" placeholder="What is correct instead?"></textarea>
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <label class="form-label">Remediation Hint</label>
+                                        <textarea name="remediation_hint" class="form-control" rows="2" placeholder="Short hint for recovery."></textarea>
+                                    </div>
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm misconception-cancel d-none">Cancel Edit</button>
+                                </div>
+                            </form>
+
+                            <div class="misconception-list mt-3" data-stage="{{ $stage }}">
+                                @forelse($stageData[$stage]['misconceptions'] as $misconception)
+                                <div class="misconception-item border rounded p-3 mb-2"
+                                    data-id="{{ $misconception->id }}"
+                                    data-stage="{{ $stage }}"
+                                    data-concept-tag="{{ e($misconception->concept_tag ?? '') }}"
+                                    data-label="{{ e($misconception->label) }}"
+                                    data-description="{{ e($misconception->description ?? '') }}"
+                                    data-correct-concept="{{ e($misconception->correct_concept ?? '') }}"
+                                    data-remediation-hint="{{ e($misconception->remediation_hint ?? '') }}"
+                                    data-status="{{ e($misconception->status) }}"
+                                    data-source="{{ e($misconception->source) }}">
+                                    <div class="d-flex justify-content-between align-items-start gap-3">
+                                        <div>
+                                            <strong>{{ $misconception->label }}</strong>
+                                            <span class="badge bg-warning text-dark ms-2">{{ $misconception->status }}</span>
+                                            @if($misconception->concept_tag)
+                                                <span class="badge bg-secondary ms-1">{{ $misconception->concept_tag }}</span>
+                                            @endif
+                                            @if($misconception->description)
+                                                <div class="small text-muted mt-1">{{ $misconception->description }}</div>
+                                            @endif
+                                            @if($misconception->correct_concept)
+                                                <div class="small mt-2"><strong>Correct concept:</strong> {{ $misconception->correct_concept }}</div>
+                                            @endif
+                                            @if($misconception->remediation_hint)
+                                                <div class="small"><strong>Hint:</strong> {{ $misconception->remediation_hint }}</div>
+                                            @endif
+                                        </div>
+                                        <div class="d-flex flex-column align-items-end gap-2">
+                                            <span class="badge bg-info text-dark">{{ $misconception->source }}</span>
+                                            <div class="d-flex gap-2">
+                                                <button type="button" class="btn btn-sm btn-outline-primary edit-misconception">Edit</button>
+                                                <button type="button" class="btn btn-sm btn-outline-danger delete-misconception">Delete</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                @empty
+                                <p class="no-misconception text-muted mb-0">No misconception items yet.</p>
+                                @endforelse
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -152,6 +241,48 @@
 
 <script>
     $(document).ready(function() {
+        function renderMisconceptionItem(misconception, stage) {
+            return '<div class="misconception-item border rounded p-3 mb-2" ' +
+                'data-id="' + misconception.id + '" ' +
+                'data-stage="' + escapeHtml(stage) + '" ' +
+                'data-concept-tag="' + escapeHtml(misconception.concept_tag || '') + '" ' +
+                'data-label="' + escapeHtml(misconception.label) + '" ' +
+                'data-description="' + escapeHtml(misconception.description || '') + '" ' +
+                'data-correct-concept="' + escapeHtml(misconception.correct_concept || '') + '" ' +
+                'data-remediation-hint="' + escapeHtml(misconception.remediation_hint || '') + '" ' +
+                'data-status="' + escapeHtml(misconception.status) + '" ' +
+                'data-source="' + escapeHtml(misconception.source) + '">' +
+                '<div class="d-flex justify-content-between align-items-start gap-3">' +
+                '<div>' +
+                '<strong>' + escapeHtml(misconception.label) + '</strong>' +
+                '<span class="badge bg-warning text-dark ms-2">' + escapeHtml(misconception.status) + '</span>' +
+                (misconception.concept_tag ? '<span class="badge bg-secondary ms-1">' + escapeHtml(misconception.concept_tag) + '</span>' : '') +
+                (misconception.description ? '<div class="small text-muted mt-1">' + escapeHtml(misconception.description) + '</div>' : '') +
+                (misconception.correct_concept ? '<div class="small mt-2"><strong>Correct concept:</strong> ' + escapeHtml(misconception.correct_concept) + '</div>' : '') +
+                (misconception.remediation_hint ? '<div class="small"><strong>Hint:</strong> ' + escapeHtml(misconception.remediation_hint) + '</div>' : '') +
+                '</div>' +
+                '<div class="d-flex flex-column align-items-end gap-2">' +
+                '<span class="badge bg-info text-dark">' + escapeHtml(misconception.source) + '</span>' +
+                '<div class="d-flex gap-2">' +
+                '<button type="button" class="btn btn-sm btn-outline-primary edit-misconception">Edit</button>' +
+                '<button type="button" class="btn btn-sm btn-outline-danger delete-misconception">Delete</button>' +
+                '</div>' +
+                '</div>' +
+                '</div>' +
+                '</div>';
+        }
+
+        function resetMisconceptionForm(form) {
+            form[0].reset();
+            form.find('[name="misconception_id"]').val('');
+            form.find('[name="status"]').val('approved');
+            form.find('.misconception-submit').text('Add Item');
+            form.find('.misconception-cancel').addClass('d-none');
+        }
+
+        function escapeHtml(value) {
+            return $('<div>').text(value || '').html();
+        }
         
         // Save text for stage (AJAX)
         $('.stage-text-form').on('submit', function(e) {
@@ -210,6 +341,105 @@
                 },
                 error: function(xhr) {
                     alert('Upload failed: ' + (xhr.responseJSON.error || 'Unknown error'));
+                }
+            });
+        });
+
+        $('.misconception-form').on('submit', function(e) {
+            e.preventDefault();
+            var form = $(this);
+            var stage = form.data('stage');
+            var misconceptionId = form.find('[name="misconception_id"]').val();
+            var isEditing = !!misconceptionId;
+            var url = isEditing
+                ? '{{ route("admin.lessons.stages.misconceptions.update", ["lesson" => $lesson->id, "stage" => "_stage_", "misconception" => "_misconception_"]) }}'.replace('_stage_', stage).replace('_misconception_', misconceptionId)
+                : '{{ route("admin.lessons.stages.misconceptions.store", ["lesson" => $lesson->id, "stage" => "_stage_"]) }}'.replace('_stage_', stage);
+            var payload = form.serializeArray();
+
+            if (isEditing) {
+                payload.push({ name: '_method', value: 'PATCH' });
+            }
+
+            $.ajax({
+                url: url,
+                method: 'POST',
+                data: $.param(payload),
+                success: function(response) {
+                    var misconception = response.data;
+                    var list = $('.misconception-list[data-stage="' + stage + '"]');
+                    list.find('.no-misconception').remove();
+
+                    if (isEditing) {
+                        list.find('.misconception-item[data-id="' + misconception.id + '"]').replaceWith(renderMisconceptionItem(misconception, stage));
+                    } else {
+                        list.prepend(renderMisconceptionItem(misconception, stage));
+                    }
+
+                    resetMisconceptionForm(form);
+                    alert(isEditing ? 'Misconception item updated.' : 'Misconception item saved.');
+                },
+                error: function(xhr) {
+                    var message = 'Unknown error';
+                    if (xhr.responseJSON) {
+                        message = xhr.responseJSON.message || xhr.responseJSON.error || 'Validation failed';
+                    }
+                    alert('Error saving misconception: ' + message);
+                }
+            });
+        });
+
+        $(document).on('click', '.edit-misconception', function() {
+            var item = $(this).closest('.misconception-item');
+            var stage = item.data('stage');
+            var form = $('.misconception-form[data-stage="' + stage + '"]');
+
+            form.find('[name="misconception_id"]').val(item.data('id'));
+            form.find('[name="concept_tag"]').val(item.data('concept-tag'));
+            form.find('[name="label"]').val(item.data('label'));
+            form.find('[name="description"]').val(item.data('description'));
+            form.find('[name="correct_concept"]').val(item.data('correct-concept'));
+            form.find('[name="remediation_hint"]').val(item.data('remediation-hint'));
+            form.find('[name="status"]').val(item.data('status'));
+            form.find('.misconception-submit').text('Update Item');
+            form.find('.misconception-cancel').removeClass('d-none');
+
+            $('html, body').animate({
+                scrollTop: form.offset().top - 120
+            }, 200);
+        });
+
+        $('.misconception-cancel').on('click', function() {
+            resetMisconceptionForm($(this).closest('.misconception-form'));
+        });
+
+        $(document).on('click', '.delete-misconception', function() {
+            var item = $(this).closest('.misconception-item');
+            var stage = item.data('stage');
+            var id = item.data('id');
+
+            if (!confirm('Delete this misconception item?')) {
+                return;
+            }
+
+            $.ajax({
+                url: '{{ route("admin.lessons.stages.misconceptions.destroy", ["lesson" => $lesson->id, "stage" => "_stage_", "misconception" => "_misconception_"]) }}'.replace('_stage_', stage).replace('_misconception_', id),
+                method: 'POST',
+                data: {
+                    _token: '{{ csrf_token() }}',
+                    _method: 'DELETE'
+                },
+                success: function() {
+                    var list = item.closest('.misconception-list');
+                    item.remove();
+                    if (list.find('.misconception-item').length === 0) {
+                        list.append('<p class="no-misconception text-muted mb-0">No misconception items yet.</p>');
+                    }
+                    resetMisconceptionForm($('.misconception-form[data-stage="' + stage + '"]'));
+                    alert('Misconception item deleted.');
+                },
+                error: function(xhr) {
+                    var message = (xhr.responseJSON && (xhr.responseJSON.message || xhr.responseJSON.error)) ? (xhr.responseJSON.message || xhr.responseJSON.error) : 'Unknown error';
+                    alert('Error deleting misconception: ' + message);
                 }
             });
         });
