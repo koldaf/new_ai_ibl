@@ -43,7 +43,42 @@
             <!-- Stage Content -->
             @if($stageData[$stage]['content'] && $stageData[$stage]['content']->content)
                 <div class="mb-4">
+                    @if($stage === 'explore')
+                        @php
+                            $exploreContentCompletionKey = 'stage_content-' . $stageData[$stage]['content']->id;
+                            $exploreContentCompleted = $exploreActivityCompletions->has($exploreContentCompletionKey);
+                        @endphp
+                        <div class="alert alert-light border d-flex align-items-center justify-content-between gap-3 explore-activity-row">
+                            <div>
+                                <strong>Explore Activity:</strong> Review the lesson content for this stage.
+                            </div>
+                            <div class="form-check m-0">
+                                <input
+                                    class="form-check-input explore-activity-checkbox"
+                                    type="checkbox"
+                                    id="explore-content-activity-{{ $stageData[$stage]['content']->id }}"
+                                    data-stage="explore"
+                                    data-activity-type="stage_content"
+                                    data-activity-reference-id="{{ $stageData[$stage]['content']->id }}"
+                                    {{ $exploreContentCompleted ? 'checked' : '' }}
+                                    {{ $progress->explore_completed ? 'disabled' : '' }}
+                                >
+                                <label class="form-check-label" for="explore-content-activity-{{ $stageData[$stage]['content']->id }}">
+                                    Mark reviewed
+                                </label>
+                            </div>
+                        </div>
+                    @endif
                     {!! $stageData[$stage]['content']->content !!}
+                </div>
+            @endif
+
+            @if($stage === 'explore' && $exploreActivities->count() > 0)
+                <div class="alert alert-info d-flex align-items-center justify-content-between gap-3">
+                    <div>
+                        Complete each Explore activity before marking the stage complete.
+                    </div>
+                    <strong><span id="explore-progress-count">{{ $exploreCompletedCount }}</span>/{{ $exploreActivities->count() }} done</strong>
                 </div>
             @endif
 
@@ -73,6 +108,27 @@
                                     @endif
                                     @if($media->description)
                                         <p>{!! $media->description !!}</p>
+                                    @endif
+                                    @if($stage === 'explore')
+                                        @php
+                                            $exploreMediaCompletionKey = 'media-' . $media->id;
+                                            $exploreMediaCompleted = $exploreActivityCompletions->has($exploreMediaCompletionKey);
+                                        @endphp
+                                        <div class="form-check border-top pt-3 mt-3">
+                                            <input
+                                                class="form-check-input explore-activity-checkbox"
+                                                type="checkbox"
+                                                id="explore-media-activity-{{ $media->id }}"
+                                                data-stage="explore"
+                                                data-activity-type="media"
+                                                data-activity-reference-id="{{ $media->id }}"
+                                                {{ $exploreMediaCompleted ? 'checked' : '' }}
+                                                {{ $progress->explore_completed ? 'disabled' : '' }}
+                                            >
+                                            <label class="form-check-label" for="explore-media-activity-{{ $media->id }}">
+                                                Mark this activity complete
+                                            </label>
+                                        </div>
                                     @endif
                                 </div>
                             </div>
@@ -242,6 +298,15 @@
                     @else
                         <p class="text-info mb-0">Submit the checkpoint above to complete the Engage stage.</p>
                     @endif
+                @elseif($stage === 'explore')
+                    @if($exploreActivities->count() > 0)
+                        <div class="mb-2 small text-muted" id="explore-complete-helper">
+                            {{ $allExploreActivitiesCompleted ? 'All Explore activities are complete. You can now mark this stage as complete.' : 'Finish all Explore activities before you mark this stage as complete.' }}
+                        </div>
+                    @endif
+                    <button class="btn btn-success mark-complete" data-stage="{{ $stage }}" id="explore-complete-button" {{ $allExploreActivitiesCompleted ? '' : 'disabled' }}>
+                        Mark {{ ucfirst($stage) }} as Complete
+                    </button>
                 @else
                     <button class="btn btn-success mark-complete" data-stage="{{ $stage }}">Mark {{ ucfirst($stage) }} as Complete</button>
                 @endif
@@ -362,6 +427,28 @@ $(document).ready(function() {
 
         helper.text('Continue the Engage discussion until Denzy marks it ready for completion.');
         badge.text('Discussion in progress').removeClass('bg-success bg-warning').addClass('bg-secondary');
+    }
+
+    function updateExploreCompletionState(completedCount, totalCount) {
+        var helper = $('#explore-complete-helper');
+        var button = $('#explore-complete-button');
+        var allCompleted = totalCount === 0 || completedCount >= totalCount;
+
+        $('#explore-progress-count').text(completedCount);
+
+        if (!button.length) {
+            return;
+        }
+
+        button.prop('disabled', !allCompleted);
+
+        if (!helper.length) {
+            return;
+        }
+
+        helper.text(allCompleted
+            ? 'All Explore activities are complete. You can now mark this stage as complete.'
+            : 'Finish all Explore activities before you mark this stage as complete.');
     }
 
     function appendEngageStudentMessage(text) {
@@ -485,6 +572,9 @@ $(document).ready(function() {
                 if (stage === 'engage') {
                     $('#engage-chat-form :input').prop('disabled', true);
                 }
+                if (stage === 'explore') {
+                    $('.explore-activity-checkbox').prop('disabled', true);
+                }
                 // Update tab style
                 $('#' + stage + '-tab').addClass('bg-success text-white');
                 // Optionally show success message
@@ -493,6 +583,29 @@ $(document).ready(function() {
             error: function(xhr) {
                 console.error(xhr);
                 alert('Error: ' + xhr.responseJSON.error);
+            }
+        });
+    });
+
+    $('.explore-activity-checkbox').on('change', function() {
+        var checkbox = $(this);
+        var completed = checkbox.is(':checked');
+
+        $.ajax({
+            url: '{{ route("student.lessons.stages.activities.complete", ["lesson" => $lesson->id, "stage" => "_stage_"]) }}'.replace('_stage_', checkbox.data('stage')),
+            method: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}',
+                activity_type: checkbox.data('activity-type'),
+                activity_reference_id: checkbox.data('activity-reference-id'),
+                completed: completed ? 1 : 0
+            },
+            success: function(response) {
+                updateExploreCompletionState(response.completed_count, response.total_count);
+            },
+            error: function(xhr) {
+                checkbox.prop('checked', !completed);
+                alert((xhr.responseJSON && xhr.responseJSON.error) ? xhr.responseJSON.error : 'Unable to update Explore activity.');
             }
         });
     });
@@ -650,6 +763,7 @@ $(document).ready(function() {
 
     updateDenzyVisibility();
     updateEngageCompletionState({{ $canMarkEngageComplete ? 'true' : 'false' }});
+    updateExploreCompletionState({{ $exploreCompletedCount }}, {{ $exploreActivities->count() }});
     scrollToBottom('#engage-chat-messages');
 
     if (engageMode === 'chat' && activeStage() === 'engage' && !engageStarted) {
@@ -664,6 +778,10 @@ $(document).ready(function() {
 <style>
     .typing-loader-label {
         font-weight: 500;
+    }
+
+    .explore-activity-row {
+        background: rgba(13, 110, 253, 0.03);
     }
 
     .typing-loader-dots {

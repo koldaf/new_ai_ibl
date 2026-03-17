@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AiChatMessage;
 use App\Models\EngageMcqAttempt;
 use App\Models\Lesson;
+use App\Models\LessonActivityCompletion;
 use App\Models\LessonProgress;
 use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
@@ -57,6 +58,17 @@ class LessonController extends Controller
             ->when($engageMcqQuestion, fn ($query) => $query->where('engage_mcq_question_id', $engageMcqQuestion->id))
             ->latest('id')
             ->first();
+        $exploreActivities = $lesson->getStageActivities('explore');
+        $exploreActivityCompletions = LessonActivityCompletion::query()
+            ->where('user_id', Auth::id())
+            ->where('lesson_id', $lesson->id)
+            ->where('stage', 'explore')
+            ->get()
+            ->keyBy(fn (LessonActivityCompletion $completion) => $completion->activity_type . '-' . $completion->activity_reference_id);
+        $exploreCompletedCount = $exploreActivityCompletions->count();
+        $allExploreActivitiesCompleted = $exploreActivities->isEmpty() || $exploreActivities->every(function (array $activity) use ($exploreActivityCompletions) {
+            return $exploreActivityCompletions->has($activity['activity_type'] . '-' . $activity['activity_reference_id']);
+        });
         $canMarkEngageComplete = $engageMode === 'mcq'
             ? (bool) $engageMcqAttempt
             : $latestEngageMessage?->engage_status === 'complete';
@@ -81,8 +93,83 @@ class LessonController extends Controller
             'canMarkEngageComplete',
             'engageMode',
             'engageMcqQuestion',
-            'engageMcqAttempt'
+            'engageMcqAttempt',
+            'exploreActivities',
+            'exploreActivityCompletions',
+            'exploreCompletedCount',
+            'allExploreActivitiesCompleted'
         ));
+    }
+
+    public function completeActivity(Request $request, Lesson $lesson, string $stage)
+    {
+        if ($stage !== 'explore') {
+            return response()->json(['error' => 'Activity tracking is only enabled for the Explore stage.'], 422);
+        }
+
+        $progress = LessonProgress::firstOrCreate([
+            'user_id' => Auth::id(),
+            'lesson_id' => $lesson->id,
+        ]);
+
+        if ($progress->explore_completed) {
+            return response()->json(['error' => 'Explore has already been completed for this lesson.'], 422);
+        }
+
+        $validated = $request->validate([
+            'activity_type' => 'required|in:stage_content,media',
+            'activity_reference_id' => 'required|integer|min:1',
+            'completed' => 'nullable|boolean',
+        ]);
+
+        $activities = $lesson->getStageActivities($stage);
+        $activityExists = $activities->contains(function (array $activity) use ($validated) {
+            return $activity['activity_type'] === $validated['activity_type']
+                && (int) $activity['activity_reference_id'] === (int) $validated['activity_reference_id'];
+        });
+
+        if (! $activityExists) {
+            return response()->json(['error' => 'Activity not found for this lesson stage.'], 404);
+        }
+
+        $shouldComplete = $request->boolean('completed', true);
+
+        if ($shouldComplete) {
+            LessonActivityCompletion::updateOrCreate(
+                [
+                    'user_id' => Auth::id(),
+                    'lesson_id' => $lesson->id,
+                    'stage' => $stage,
+                    'activity_type' => $validated['activity_type'],
+                    'activity_reference_id' => $validated['activity_reference_id'],
+                ],
+                [
+                    'completed_at' => now(),
+                ]
+            );
+        } else {
+            LessonActivityCompletion::query()
+                ->where('user_id', Auth::id())
+                ->where('lesson_id', $lesson->id)
+                ->where('stage', $stage)
+                ->where('activity_type', $validated['activity_type'])
+                ->where('activity_reference_id', $validated['activity_reference_id'])
+                ->delete();
+        }
+
+        $completedCount = LessonActivityCompletion::query()
+            ->where('user_id', Auth::id())
+            ->where('lesson_id', $lesson->id)
+            ->where('stage', $stage)
+            ->count();
+        $totalCount = $activities->count();
+
+        return response()->json([
+            'success' => true,
+            'completed_count' => $completedCount,
+            'total_count' => $totalCount,
+            'all_completed' => $totalCount === 0 || $completedCount >= $totalCount,
+        ]);
     }
 
     public function completeStage(Request $request, Lesson $lesson, string $stage)
@@ -131,6 +218,21 @@ class LessonController extends Controller
                         'error' => 'Complete the Engage discussion with AI before marking this stage as complete.',
                     ], 422);
                 }
+            }
+        }
+
+        if ($stage === 'explore') {
+            $totalActivities = $lesson->countStageActivities('explore');
+            $completedActivities = LessonActivityCompletion::query()
+                ->where('user_id', Auth::id())
+                ->where('lesson_id', $lesson->id)
+                ->where('stage', 'explore')
+                ->count();
+
+            if ($totalActivities > 0 && $completedActivities < $totalActivities) {
+                return response()->json([
+                    'error' => 'Complete every Explore activity before marking this stage as complete.',
+                ], 422);
             }
         }
 

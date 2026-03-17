@@ -32,6 +32,10 @@ class AuthController extends Controller
                 return redirect()->intended(route('admin.dashboard'));
             }
 
+            if ($user->hasRole('teacher')) {
+                return redirect()->intended(route('teacher.dashboard'));
+            }
+
             return redirect()->intended(route('student.lessons.index'));
         }
 

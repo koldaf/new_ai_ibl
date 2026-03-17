@@ -40,4 +40,14 @@ class LessonProgress extends Model
     {
         return $this->belongsTo(Lesson::class);
     }
+
+    public function scopeForLesson($query, int $lessonId)
+    {
+        return $query->where('lesson_id', $lessonId);
+    }
+
+    public function scopeForUser($query, int $userId)
+    {
+        return $query->where('user_id', $userId);
+    }
 }

@@ -29,6 +29,15 @@
                                 <label for="grade_level" class="form-label">Grade Level</label>
                                 <input type="text" class="form-control" id="grade_level" name="grade_level" value="{{ $lesson->grade_level }}">
                             </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="teacher_id" class="form-label">Teacher Owner</label>
+                                <select class="form-control" id="teacher_id" name="teacher_id">
+                                    <option value="">Unassigned</option>
+                                    @foreach($teachers as $teacher)
+                                        <option value="{{ $teacher->id }}" {{ (string) $lesson->teacher_id === (string) $teacher->id ? 'selected' : '' }}>{{ $teacher->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
                             
                             <div class="col-md-12 mb-3">
                                 <label for="description" class="form-label">Description</label>

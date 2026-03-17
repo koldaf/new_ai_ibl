@@ -8,7 +8,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Models\Lesson;
 use App\Models\LessonProgress;
+use App\Models\LessonActivityCompletion;
 use App\Models\QuizAttempt;
 
 class User extends Authenticatable
@@ -55,6 +57,16 @@ class User extends Authenticatable
         return $this->hasMany(LessonProgress::class);
     }
 
+    public function lessonActivityCompletions()
+    {
+        return $this->hasMany(LessonActivityCompletion::class);
+    }
+
+    public function ownedLessons(): HasMany
+    {
+        return $this->hasMany(Lesson::class, 'teacher_id');
+    }
+
     public function quizAttempts()
     {
         return $this->hasMany(QuizAttempt::class);
@@ -76,5 +88,15 @@ class User extends Authenticatable
     public function isAdmin(): bool
     {
         return $this->role === 'admin';
+    }
+
+    public function isTeacher(): bool
+    {
+        return $this->role === 'teacher';
+    }
+
+    public function assignedLessons()
+    {
+        return $this->belongsToMany(Lesson::class, 'lesson_teacher', 'teacher_id', 'lesson_id')->withTimestamps();
     }
 }

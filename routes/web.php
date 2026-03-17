@@ -5,9 +5,11 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\LessonController;
 use App\Http\Controllers\Admin\LessonStageController;
+use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Students\LessonController as StudentLessonController;
 use App\Http\Controllers\Students\QuizController;
 use App\Http\Controllers\Students\AIChatController;
+use App\Http\Controllers\Teachers\DashboardController as TeacherDashboardController;
 
 /*
 |--------------------------------------------------------------------------
@@ -42,6 +44,8 @@ Route::prefix('admin')
 
         Route::get('/dashboard', [AdminDashboardController::class, 'index'])
             ->name('dashboard');
+
+        Route::resource('users', UserController::class)->except(['show']);
 
         // Lessons — exclude 'show' since admins manage, not view
         Route::resource('lessons', LessonController::class)
@@ -105,6 +109,10 @@ Route::prefix('student')
             [StudentLessonController::class, 'completeStage'])
             ->name('lessons.stages.complete');  // consistent plural 'stages' //student.lessons.quiz.submit
 
+        Route::post('/lessons/{lesson}/stages/{stage}/activities/complete',
+            [StudentLessonController::class, 'completeActivity'])
+            ->name('lessons.stages.activities.complete');
+
         // Quiz — own controller, own namespace
         Route::post('/lessons/{lesson}/quiz',
             [QuizController::class, 'submit'])
@@ -118,4 +126,18 @@ Route::prefix('student')
         Route::post('/lessons/{lesson}/ai/ask',
             [AIChatController::class, 'ask'])
             ->name('lessons.ai.ask');
+    });
+
+Route::prefix('teacher')
+    ->name('teacher.')
+    ->middleware(['auth', 'role:teacher'])
+    ->group(function () {
+        Route::get('/dashboard', [TeacherDashboardController::class, 'index'])
+            ->name('dashboard');
+
+        Route::get('/lessons/{lesson}', [TeacherDashboardController::class, 'showLesson'])
+            ->name('lessons.show');
+
+        Route::get('/lessons/{lesson}/export', [TeacherDashboardController::class, 'exportLesson'])
+            ->name('lessons.export');
     });

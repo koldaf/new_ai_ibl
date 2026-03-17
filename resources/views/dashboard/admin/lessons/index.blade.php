@@ -14,6 +14,7 @@
             <tr>
                 <th>ID</th>
                 <th>Title</th>
+                <th>Teacher</th>
                 <th>Subject</th>
                 <th>Grade Level</th>
                 <th>Actions</th>
@@ -25,6 +26,7 @@
             <tr>
                 <td>{{ ++$i }}</td>
                 <td>{{ $lesson->title }}</td>
+                <td>{{ $lesson->teacher?->name ?? 'Unassigned' }}</td>
                 <td>{{ $lesson->subject }}</td>
                 <td>{{ $lesson->grade_level }}</td>
                 <td>

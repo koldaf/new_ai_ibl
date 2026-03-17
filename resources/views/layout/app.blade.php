@@ -442,10 +442,23 @@
 </head>
 <body>
 
+    @php
+        $dashboardRoute = route('student.lessons.index');
+        $dashboardRouteName = 'student.lessons.index';
+
+        if (auth()->check() && auth()->user()->hasRole('admin')) {
+            $dashboardRoute = route('admin.dashboard');
+            $dashboardRouteName = 'admin.dashboard';
+        } elseif (auth()->check() && auth()->user()->hasRole('teacher')) {
+            $dashboardRoute = route('teacher.dashboard');
+            $dashboardRouteName = 'teacher.dashboard';
+        }
+    @endphp
+
     {{-- ═══ SIDEBAR ═══════════════════════════════════════ --}}
     <aside class="sidebar" id="sidebar">
 
-        <a href="{{ auth()->user()->hasRole('admin') ? route('admin.dashboard') : route('student.lessons.index') }}" class="sidebar-brand">
+        <a href="{{ $dashboardRoute }}" class="sidebar-brand">
             <div class="brand-icon"><i class="bi bi-cpu"></i></div>
             <span class="brand-text">AI-IBL</span>
         </a>
@@ -455,8 +468,8 @@
             {{-- Main --}}
             <div class="nav-label">Main</div>
 
-            <a href="{{ auth()->user()->hasRole('admin') ? route('admin.dashboard') : route('student.lessons.index') }}"
-               class="nav-item-link {{ request()->routeIs(auth()->user()->hasRole('admin') ? 'admin.dashboard' : 'student.lessons.index') ? 'active' : '' }}">
+                <a href="{{ $dashboardRoute }}"
+                    class="nav-item-link {{ request()->routeIs($dashboardRouteName) ? 'active' : '' }}">
                 <i class="bi bi-grid-1x2"></i>
                 <span>Dashboard</span>
             </a>
@@ -465,8 +478,8 @@
             {{-- Users --}}
             <div class="nav-label mt-2">Admin Role</div>
 
-            <a href="#"
-               class="nav-item-link {{ request()->routeIs('users.*') ? 'active' : '' }}">
+            <a href="{{ route('admin.users.index') }}"
+               class="nav-item-link {{ request()->routeIs('admin.users.*') ? 'active' : '' }}">
                 <i class="bi bi-people"></i>
                 <span>Users</span>
             </a>
@@ -505,6 +518,14 @@
                        class="nav-item-link {{ request()->routeIs('student.lessons.index') ? 'active' : '' }}">
                         <i class="bi bi-list-ul"></i>
                         <span>Lesson List</span>
+                </a>
+            @endif
+            @if(auth()->user()->role === 'teacher')
+                <div class="nav-label mt-2">Teaching</div>
+                <a href="{{ route('teacher.dashboard') }}"
+                   class="nav-item-link {{ request()->routeIs('teacher.dashboard') ? 'active' : '' }}">
+                    <i class="bi bi-graph-up"></i>
+                    <span>Progress Dashboard</span>
                 </a>
             @endif
         </nav>

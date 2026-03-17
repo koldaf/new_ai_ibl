@@ -23,13 +23,19 @@ class UserFactory extends Factory
      */
     public function definition(): array
     {
-        return [
+        $attributes = [
             'name' => fake()->name(),
-            'email' => fake()->unique()->safeEmail(),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
+            'role' => 'student',
             'remember_token' => Str::random(10),
         ];
+
+        if (config('database.default') === 'sqlite') {
+            $attributes['email'] = fake()->unique()->safeEmail();
+        }
+
+        return $attributes;
     }
 
     /**

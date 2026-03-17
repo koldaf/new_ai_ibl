@@ -11,9 +11,19 @@ return new class extends Migration
      */
     public function up(): void
     {
+        $driver = Schema::getConnection()->getDriverName();
+
+        // SQLite can fail dropping an indexed column in this project setup.
+        // Keep email during sqlite-based tests; MySQL/MariaDB still drop it.
+        if ($driver === 'sqlite') {
+            return;
+        }
+
         Schema::table('users', function (Blueprint $table) {
             //drop the email column since we are not using it anymore
-            $table->dropColumn('email');
+            if (Schema::hasColumn('users', 'email')) {
+                $table->dropColumn('email');
+            }
             
         });
     }
@@ -24,8 +34,9 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            //
-            $table->string('email')->unique()->after('name');
+            if (!Schema::hasColumn('users', 'email')) {
+                $table->string('email')->unique()->after('name');
+            }
         });
     }
 };
