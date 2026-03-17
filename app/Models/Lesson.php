@@ -52,4 +52,19 @@ class Lesson extends Model
     {
         return $this->hasMany(LessonMisconception::class);
     }
+
+    public function engageMcqQuestions()
+    {
+        return $this->hasMany(EngageMcqQuestion::class);
+    }
+
+    public function getEngageMcqQuestion(string $stage = 'engage')
+    {
+        return $this->engageMcqQuestions()->where('stage', $stage)->first();
+    }
+
+    public function engageMcqAttempts()
+    {
+        return $this->hasMany(EngageMcqAttempt::class);
+    }
 }

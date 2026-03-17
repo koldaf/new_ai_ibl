@@ -76,6 +76,10 @@ Route::prefix('admin')
                     ->name('misconceptions.update');
                 Route::delete('/{stage}/misconceptions/{misconception}', [LessonStageController::class, 'destroyMisconception'])
                     ->name('misconceptions.destroy');
+                Route::post('/{stage}/engage-mcq', [LessonStageController::class, 'upsertEngageMcq'])
+                    ->name('engage-mcq.upsert');
+                Route::delete('/{stage}/engage-mcq', [LessonStageController::class, 'destroyEngageMcq'])
+                    ->name('engage-mcq.destroy');
             });
     });
 
@@ -105,6 +109,10 @@ Route::prefix('student')
         Route::post('/lessons/{lesson}/quiz',
             [QuizController::class, 'submit'])
             ->name('lessons.quiz.submit');
+
+        Route::post('/lessons/{lesson}/engage-mcq',
+            [StudentLessonController::class, 'submitEngageMcq'])
+            ->name('lessons.engage-mcq.submit');
 
         // AI Chat
         Route::post('/lessons/{lesson}/ai/ask',

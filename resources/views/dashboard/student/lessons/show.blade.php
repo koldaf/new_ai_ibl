@@ -33,6 +33,13 @@
     <div class="tab-content p-3 border border-top-0 bg-white" id="lessonTabsContent">
         @foreach($stages as $index => $stage)
         <div class="tab-pane fade {{ $index == 0 ? 'show active' : '' }}" id="{{ $stage }}" role="tabpanel" aria-labelledby="{{ $stage }}-tab">
+            @if($stage === 'explain' && $engageMode === 'mcq' && $engageMcqAttempt?->resolved_feedback)
+                <div class="alert alert-warning border-start border-4 border-warning">
+                    <strong>From your Engage checkpoint:</strong>
+                    <div class="mt-2">{!! nl2br(e($engageMcqAttempt->resolved_feedback)) !!}</div>
+                </div>
+            @endif
+
             <!-- Stage Content -->
             @if($stageData[$stage]['content'] && $stageData[$stage]['content']->content)
                 <div class="mb-4">
@@ -118,7 +125,7 @@
                 </div>
             @endif
 
-            @if($stage === 'engage')
+            @if($stage === 'engage' && $engageMode === 'chat')
                 <div class="card mb-4 shadow-sm border-0">
                     <div class="card-header bg-light d-flex justify-content-between align-items-center">
                         <span class="fw-semibold">Engage Discussion</span>
@@ -172,19 +179,69 @@
                 </div>
             @endif
 
+            @if($stage === 'engage' && $engageMode === 'mcq' && $engageMcqQuestion)
+                <div class="card mb-4 shadow-sm border-0">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <span class="fw-semibold">Engage Checkpoint</span>
+                        <span class="badge {{ $progress->engage_completed ? 'bg-success' : 'bg-secondary' }}" id="engage-status-badge">
+                            {{ $progress->engage_completed ? 'Complete' : 'Waiting for response' }}
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        <p class="fw-semibold mb-3">{{ $engageMcqQuestion->question }}</p>
+
+                        @if(!$progress->engage_completed)
+                            <form id="engage-mcq-form">
+                                @csrf
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="selected_option" value="a" id="engage_option_a">
+                                    <label class="form-check-label" for="engage_option_a">A. {{ $engageMcqQuestion->option_a }}</label>
+                                </div>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="selected_option" value="b" id="engage_option_b">
+                                    <label class="form-check-label" for="engage_option_b">B. {{ $engageMcqQuestion->option_b }}</label>
+                                </div>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="selected_option" value="c" id="engage_option_c">
+                                    <label class="form-check-label" for="engage_option_c">C. {{ $engageMcqQuestion->option_c }}</label>
+                                </div>
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="radio" name="selected_option" value="d" id="engage_option_d">
+                                    <label class="form-check-label" for="engage_option_d">D. {{ $engageMcqQuestion->option_d }}</label>
+                                </div>
+                                <button class="btn btn-primary" type="submit">Submit Checkpoint</button>
+                            </form>
+                        @endif
+
+                        <div id="engage-mcq-result" class="{{ $engageMcqAttempt ? 'mt-3' : 'mt-0' }}">
+                            @if($engageMcqAttempt)
+                                <div class="alert {{ $engageMcqAttempt->is_correct ? 'alert-success' : 'alert-warning' }} mb-0">
+                                    <div><strong>Your choice:</strong> {{ strtoupper($engageMcqAttempt->selected_option) }}</div>
+                                    <div class="mt-2">{!! nl2br(e($engageMcqAttempt->resolved_feedback ?? '')) !!}</div>
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+            @endif
+
             <!-- Mark as Complete Button (except evaluate if not done yet) -->
             @if(!$progress->{$stage.'_completed'} && $stage != 'evaluate')
                 @if($stage === 'engage')
-                    <div class="mb-2 small text-muted" id="engage-complete-helper">
-                        @if($canMarkEngageComplete)
-                            Denzy has marked this Engage discussion as ready for completion.
-                        @else
-                            Continue the Engage discussion until Denzy marks it ready for completion.
-                        @endif
-                    </div>
-                    <button class="btn btn-success mark-complete" data-stage="{{ $stage }}" id="engage-complete-button" {{ $canMarkEngageComplete ? '' : 'disabled' }}>
-                        Mark {{ ucfirst($stage) }} as Complete
-                    </button>
+                    @if($engageMode === 'chat')
+                        <div class="mb-2 small text-muted" id="engage-complete-helper">
+                            @if($canMarkEngageComplete)
+                                Denzy has marked this Engage discussion as ready for completion.
+                            @else
+                                Continue the Engage discussion until Denzy marks it ready for completion.
+                            @endif
+                        </div>
+                        <button class="btn btn-success mark-complete" data-stage="{{ $stage }}" id="engage-complete-button" {{ $canMarkEngageComplete ? '' : 'disabled' }}>
+                            Mark {{ ucfirst($stage) }} as Complete
+                        </button>
+                    @else
+                        <p class="text-info mb-0">Submit the checkpoint above to complete the Engage stage.</p>
+                    @endif
                 @else
                     <button class="btn btn-success mark-complete" data-stage="{{ $stage }}">Mark {{ ucfirst($stage) }} as Complete</button>
                 @endif
@@ -258,6 +315,7 @@
 <script>
 $(document).ready(function() {
     var engageStarted = {{ $engageMessages->isNotEmpty() ? 'true' : 'false' }};
+    var engageMode = '{{ $engageMode }}';
 
     function activeStage() {
         return $('.nav-link.active').data('bs-target').substring(1);
@@ -383,7 +441,7 @@ $(document).ready(function() {
     }
 
     function requestEngageStart() {
-        if (engageStarted) {
+        if (engageMode !== 'chat' || engageStarted) {
             return;
         }
 
@@ -508,6 +566,47 @@ $(document).ready(function() {
         });
     });
 
+    $('#engage-mcq-form').on('submit', function(e) {
+        e.preventDefault();
+
+        var form = $(this);
+        var selectedOption = form.find('input[name="selected_option"]:checked').val();
+
+        if (!selectedOption) {
+            alert('Select one option before submitting.');
+            return;
+        }
+
+        form.find(':input').prop('disabled', true);
+
+        $.ajax({
+            url: '{{ route("student.lessons.engage-mcq.submit", $lesson) }}',
+            method: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}',
+                selected_option: selectedOption
+            },
+            success: function(response) {
+                $('#engage-status-badge').text('Complete').removeClass('bg-secondary').addClass('bg-success');
+                $('#engage-mcq-result').html(
+                    '<div class="alert ' + (response.is_correct ? 'alert-success' : 'alert-warning') + ' mb-0">' +
+                        '<div><strong>Your choice:</strong> ' + escapeHtml(String(response.selected_option).toUpperCase()) + '</div>' +
+                        '<div class="mt-2">' + escapeHtml(response.feedback || '').replace(/\n/g, '<br>') + '</div>' +
+                    '</div>'
+                );
+                form.remove();
+                $('#engage-complete-helper').text('Engage checkpoint completed.');
+                $('#engage-complete-button').replaceWith('<span class="badge bg-success">Completed <i class="fas fa-check"></i></span>');
+                $('#engage-tab').addClass('bg-success text-white');
+            },
+            error: function(xhr) {
+                form.find(':input').prop('disabled', false);
+                var message = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Unable to submit checkpoint';
+                alert(message);
+            }
+        });
+    });
+
     $('#chat-form').on('submit', function(e) {
         e.preventDefault();
         var question = $('#chat-input').val();
@@ -544,7 +643,7 @@ $(document).ready(function() {
     $('button[data-bs-toggle="tab"]').on('shown.bs.tab', function() {
         updateDenzyVisibility();
 
-        if (activeStage() === 'engage' && !engageStarted) {
+        if (engageMode === 'chat' && activeStage() === 'engage' && !engageStarted) {
             requestEngageStart();
         }
     });
@@ -553,7 +652,7 @@ $(document).ready(function() {
     updateEngageCompletionState({{ $canMarkEngageComplete ? 'true' : 'false' }});
     scrollToBottom('#engage-chat-messages');
 
-    if (activeStage() === 'engage' && !engageStarted) {
+    if (engageMode === 'chat' && activeStage() === 'engage' && !engageStarted) {
         requestEngageStart();
     }
 });

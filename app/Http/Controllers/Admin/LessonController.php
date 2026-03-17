@@ -72,6 +72,7 @@ class LessonController extends Controller
                 'content' => $lesson->getStageContent($stage),
                 'media'   => $lesson->getStageMedia($stage),
                 'misconceptions' => $lesson->misconceptions()->where('stage', $stage)->latest()->get(),
+                'engageMcq' => $stage === 'engage' ? $lesson->getEngageMcqQuestion($stage) : null,
             ];
         }
 

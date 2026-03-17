@@ -33,6 +33,13 @@ class AIChatController extends Controller
 
         try {
             if ($stage === 'engage') {
+                if (($lesson->getStageContent('engage')?->activity_mode ?? 'chat') !== 'chat') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This lesson uses MCQ mode for Engage. Use the checkpoint instead of chat.',
+                    ], 422);
+                }
+
                 $payload = $intent === 'start'
                     ? $this->engageDecisionService->generateStartQuestion($lesson)
                     : $this->engageDecisionService->assessAnswer($lesson, $request->user(), $request->question);

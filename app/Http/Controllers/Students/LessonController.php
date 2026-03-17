@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Students;
 
 use App\Http\Controllers\Controller;
 use App\Models\AiChatMessage;
+use App\Models\EngageMcqAttempt;
 use App\Models\Lesson;
 use App\Models\LessonProgress;
 use App\Models\QuizAttempt;
@@ -48,7 +49,17 @@ class LessonController extends Controller
             ->get();
 
         $latestEngageMessage = $engageMessages->last();
-        $canMarkEngageComplete = $latestEngageMessage?->engage_status === 'complete';
+        $engageMode = $lesson->getStageContent('engage')?->activity_mode ?? 'chat';
+        $engageMcqQuestion = $lesson->getEngageMcqQuestion('engage');
+        $engageMcqAttempt = EngageMcqAttempt::query()
+            ->where('user_id', Auth::id())
+            ->where('lesson_id', $lesson->id)
+            ->when($engageMcqQuestion, fn ($query) => $query->where('engage_mcq_question_id', $engageMcqQuestion->id))
+            ->latest('id')
+            ->first();
+        $canMarkEngageComplete = $engageMode === 'mcq'
+            ? (bool) $engageMcqAttempt
+            : $latestEngageMessage?->engage_status === 'complete';
 
         // Load quiz questions for evaluate stage
         $quizQuestions = $lesson->quizQuestions()->get();
@@ -67,7 +78,10 @@ class LessonController extends Controller
             'quizQuestions',
             'previousAttempts',
             'engageMessages',
-            'canMarkEngageComplete'
+            'canMarkEngageComplete',
+            'engageMode',
+            'engageMcqQuestion',
+            'engageMcqAttempt'
         ));
     }
 
@@ -88,17 +102,35 @@ class LessonController extends Controller
             ->firstOrFail();
 
         if ($stage === 'engage') {
-            $latestEngageMessage = AiChatMessage::query()
-                ->where('user_id', Auth::id())
-                ->where('lesson_id', $lesson->id)
-                ->where('stage', 'engage')
-                ->latest('id')
-                ->first();
+            $engageMode = $lesson->getStageContent('engage')?->activity_mode ?? 'chat';
 
-            if (!$latestEngageMessage || $latestEngageMessage->engage_status !== 'complete') {
-                return response()->json([
-                    'error' => 'Complete the Engage discussion with AI before marking this stage as complete.',
-                ], 422);
+            if ($engageMode === 'mcq') {
+                $engageQuestion = $lesson->getEngageMcqQuestion('engage');
+                $engageAttempt = EngageMcqAttempt::query()
+                    ->where('user_id', Auth::id())
+                    ->where('lesson_id', $lesson->id)
+                    ->when($engageQuestion, fn ($query) => $query->where('engage_mcq_question_id', $engageQuestion->id))
+                    ->latest('id')
+                    ->first();
+
+                if (!$engageAttempt) {
+                    return response()->json([
+                        'error' => 'Submit the Engage checkpoint before marking this stage as complete.',
+                    ], 422);
+                }
+            } else {
+                $latestEngageMessage = AiChatMessage::query()
+                    ->where('user_id', Auth::id())
+                    ->where('lesson_id', $lesson->id)
+                    ->where('stage', 'engage')
+                    ->latest('id')
+                    ->first();
+
+                if (!$latestEngageMessage || $latestEngageMessage->engage_status !== 'complete') {
+                    return response()->json([
+                        'error' => 'Complete the Engage discussion with AI before marking this stage as complete.',
+                    ], 422);
+                }
             }
         }
 
@@ -117,6 +149,69 @@ class LessonController extends Controller
         $progress->save();
 
         return response()->json(['success' => true, 'progress' => $progress]);
+    }
+
+    public function submitEngageMcq(Request $request, Lesson $lesson)
+    {
+        $engageMode = $lesson->getStageContent('engage')?->activity_mode ?? 'chat';
+        if ($engageMode !== 'mcq') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This lesson is not using MCQ mode for Engage.',
+            ], 422);
+        }
+
+        $question = $lesson->getEngageMcqQuestion('engage');
+        if (!$question) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No Engage checkpoint is configured for this lesson.',
+            ], 404);
+        }
+
+        $validated = $request->validate([
+            'selected_option' => 'required|in:a,b,c,d',
+        ]);
+
+        $selectedOption = strtolower($validated['selected_option']);
+        $isCorrect = $selectedOption === $question->correct_option;
+        $resolvedFeedback = $question->feedbackForOption($selectedOption);
+
+        $attempt = EngageMcqAttempt::updateOrCreate(
+            [
+                'user_id' => Auth::id(),
+                'lesson_id' => $lesson->id,
+                'engage_mcq_question_id' => $question->id,
+            ],
+            [
+                'selected_option' => $selectedOption,
+                'is_correct' => $isCorrect,
+                'resolved_feedback' => $resolvedFeedback,
+            ]
+        );
+
+        $progress = LessonProgress::firstOrCreate([
+            'user_id' => Auth::id(),
+            'lesson_id' => $lesson->id,
+        ]);
+        $progress->engage_completed = true;
+
+        $allCompleted = $progress->engage_completed && $progress->explore_completed &&
+            $progress->explain_completed && $progress->elaborate_completed &&
+            $progress->evaluate_completed;
+        if ($allCompleted && !$progress->completed) {
+            $progress->completed = true;
+            $progress->completed_at = now();
+        }
+        $progress->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Engage checkpoint submitted.',
+            'selected_option' => $attempt->selected_option,
+            'is_correct' => $attempt->is_correct,
+            'feedback' => $attempt->resolved_feedback,
+        ]);
     }
 
     public function submitQuiz(Request $request, Lesson $lesson)

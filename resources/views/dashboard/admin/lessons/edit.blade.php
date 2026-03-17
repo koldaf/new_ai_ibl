@@ -60,6 +60,16 @@
                             <form class="stage-text-form" data-stage="{{ $stage }}">
                                 @csrf
                                 <input type="hidden" name="content_type" value="{{ in_array($stage, ['explain', 'elaborate']) ? 'wysiwyg' : 'text' }}">
+                                @if($stage === 'engage')
+                                    <div class="mb-3">
+                                        <label class="form-label">Engage Activity Mode</label>
+                                        <select name="activity_mode" class="form-control engage-activity-mode" data-stage="{{ $stage }}">
+                                            <option value="chat" {{ ($stageData[$stage]['content']->activity_mode ?? 'chat') === 'chat' ? 'selected' : '' }}>AI Chat</option>
+                                            <option value="mcq" {{ ($stageData[$stage]['content']->activity_mode ?? 'chat') === 'mcq' ? 'selected' : '' }}>Multiple Choice Question</option>
+                                        </select>
+                                        <div class="form-text">Choose whether students discuss with Denzy or answer a teacher-authored checkpoint question.</div>
+                                    </div>
+                                @endif
                                 <div class="mb-3">
                                     @if(in_array($stage, ['explain', 'elaborate']))
                                         <textarea class="form-control wysiwyg-editor" name="content" rows="10">{{ $stageData[$stage]['content']->content ?? '' }}</textarea>
@@ -71,6 +81,70 @@
                             </form>
                         </div>
                     </div>
+
+                    @if($stage === 'engage')
+                        <div class="card mb-3 engage-mcq-config {{ ($stageData[$stage]['content']->activity_mode ?? 'chat') === 'mcq' ? '' : 'd-none' }}" data-stage="{{ $stage }}">
+                            <div class="card-header">Engage Multiple Choice Question</div>
+                            <div class="card-body">
+                                <form class="engage-mcq-form" data-stage="{{ $stage }}">
+                                    @csrf
+                                    <div class="mb-3">
+                                        <label class="form-label">Question</label>
+                                        <textarea class="form-control" name="question" rows="3" placeholder="Enter the engage checkpoint question" required>{{ $stageData[$stage]['engageMcq']->question ?? '' }}</textarea>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Option A</label>
+                                            <input type="text" class="form-control" name="option_a" value="{{ $stageData[$stage]['engageMcq']->option_a ?? '' }}" required>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Feedback for Option A</label>
+                                            <textarea class="form-control" name="feedback_option_a" rows="2" placeholder="Explain what this answer reveals and what the learner should carry into Explain.">{{ $stageData[$stage]['engageMcq']->feedback_option_a ?? '' }}</textarea>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Option B</label>
+                                            <input type="text" class="form-control" name="option_b" value="{{ $stageData[$stage]['engageMcq']->option_b ?? '' }}" required>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Feedback for Option B</label>
+                                            <textarea class="form-control" name="feedback_option_b" rows="2">{{ $stageData[$stage]['engageMcq']->feedback_option_b ?? '' }}</textarea>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Option C</label>
+                                            <input type="text" class="form-control" name="option_c" value="{{ $stageData[$stage]['engageMcq']->option_c ?? '' }}" required>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Feedback for Option C</label>
+                                            <textarea class="form-control" name="feedback_option_c" rows="2">{{ $stageData[$stage]['engageMcq']->feedback_option_c ?? '' }}</textarea>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Option D</label>
+                                            <input type="text" class="form-control" name="option_d" value="{{ $stageData[$stage]['engageMcq']->option_d ?? '' }}" required>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Feedback for Option D</label>
+                                            <textarea class="form-control" name="feedback_option_d" rows="2">{{ $stageData[$stage]['engageMcq']->feedback_option_d ?? '' }}</textarea>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-4 mb-3">
+                                            <label class="form-label">Correct Option</label>
+                                            <select name="correct_option" class="form-control" required>
+                                                <option value="a" {{ ($stageData[$stage]['engageMcq']->correct_option ?? '') === 'a' ? 'selected' : '' }}>Option A</option>
+                                                <option value="b" {{ ($stageData[$stage]['engageMcq']->correct_option ?? '') === 'b' ? 'selected' : '' }}>Option B</option>
+                                                <option value="c" {{ ($stageData[$stage]['engageMcq']->correct_option ?? '') === 'c' ? 'selected' : '' }}>Option C</option>
+                                                <option value="d" {{ ($stageData[$stage]['engageMcq']->correct_option ?? '') === 'd' ? 'selected' : '' }}>Option D</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-8 mb-3 d-flex align-items-end gap-2">
+                                            <button type="submit" class="btn btn-primary">Save Engage MCQ</button>
+                                            <button type="button" class="btn btn-outline-danger delete-engage-mcq {{ $stageData[$stage]['engageMcq'] ? '' : 'd-none' }}" data-stage="{{ $stage }}">Delete MCQ</button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    @endif
 
                     <!-- Media Upload Section -->
                     <div class="card">
@@ -280,6 +354,16 @@
             form.find('.misconception-cancel').addClass('d-none');
         }
 
+        function toggleEngageMcqConfig(mode) {
+            var target = $('.engage-mcq-config[data-stage="engage"]');
+
+            if (!target.length) {
+                return;
+            }
+
+            target.toggleClass('d-none', mode !== 'mcq');
+        }
+
         function escapeHtml(value) {
             return $('<div>').text(value || '').html();
         }
@@ -291,6 +375,7 @@
             var stage = form.data('stage');
             var content = form.find('[name="content"]').val();
             var contentType = form.find('[name="content_type"]').val();
+            var activityMode = form.find('[name="activity_mode"]').val();
 
             $.ajax({
                 url: '{{ route("admin.lessons.stages.text", ["lesson" => $lesson->id, "stage" => "_stage_"]) }}'.replace('_stage_', stage),
@@ -298,13 +383,69 @@
                 data: {
                     _token: '{{ csrf_token() }}',
                     content: content,
-                    content_type: contentType
+                    content_type: contentType,
+                    activity_mode: activityMode
                 },
                 success: function(response) {
                     alert('Content saved successfully!');
                 },
                 error: function(xhr) {
                     alert('Error saving content: ' + xhr.responseJSON.error);
+                }
+            });
+        });
+
+        $('.engage-activity-mode').on('change', function() {
+            toggleEngageMcqConfig($(this).val());
+        });
+
+        $('.engage-mcq-form').on('submit', function(e) {
+            e.preventDefault();
+
+            var form = $(this);
+            var stage = form.data('stage');
+
+            $.ajax({
+                url: '{{ route("admin.lessons.stages.engage-mcq.upsert", ["lesson" => $lesson->id, "stage" => "_stage_"]) }}'.replace('_stage_', stage),
+                method: 'POST',
+                data: form.serialize(),
+                success: function() {
+                    $('.engage-activity-mode[data-stage="' + stage + '"]').val('mcq');
+                    toggleEngageMcqConfig('mcq');
+                    $('.delete-engage-mcq[data-stage="' + stage + '"]').removeClass('d-none');
+                    alert('Engage MCQ saved successfully.');
+                },
+                error: function(xhr) {
+                    var message = (xhr.responseJSON && (xhr.responseJSON.message || xhr.responseJSON.error)) ? (xhr.responseJSON.message || xhr.responseJSON.error) : 'Unknown error';
+                    alert('Error saving Engage MCQ: ' + message);
+                }
+            });
+        });
+
+        $('.delete-engage-mcq').on('click', function() {
+            var button = $(this);
+            var stage = button.data('stage');
+            var form = $('.engage-mcq-form[data-stage="' + stage + '"]');
+
+            if (!confirm('Delete this Engage MCQ?')) {
+                return;
+            }
+
+            $.ajax({
+                url: '{{ route("admin.lessons.stages.engage-mcq.destroy", ["lesson" => $lesson->id, "stage" => "_stage_"]) }}'.replace('_stage_', stage),
+                method: 'POST',
+                data: {
+                    _token: '{{ csrf_token() }}',
+                    _method: 'DELETE'
+                },
+                success: function() {
+                    form[0].reset();
+                    button.addClass('d-none');
+                    alert('Engage MCQ deleted.');
+                },
+                error: function(xhr) {
+                    var message = (xhr.responseJSON && (xhr.responseJSON.message || xhr.responseJSON.error)) ? (xhr.responseJSON.message || xhr.responseJSON.error) : 'Unknown error';
+                    alert('Error deleting Engage MCQ: ' + message);
                 }
             });
         });
@@ -469,6 +610,8 @@
                 }
             });
         });
+
+        toggleEngageMcqConfig($('.engage-activity-mode[data-stage="engage"]').val());
     });
 </script>
 @endpush

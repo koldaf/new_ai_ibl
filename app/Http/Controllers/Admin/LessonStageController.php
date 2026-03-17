@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\EngageMcqQuestion;
 use App\Models\Lesson;
 use App\Models\LessonMedia;
 use App\Models\LessonMisconception;
@@ -24,6 +25,7 @@ class LessonStageController extends Controller
         $validated = $request->validate([
             'content' => 'nullable|string',
             'content_type' => 'sometimes|in:text,wysiwyg',
+            'activity_mode' => 'nullable|in:chat,mcq',
         ]);
 
         // Ensure stage is valid
@@ -35,13 +37,75 @@ class LessonStageController extends Controller
 
         $stageContent = LessonStageContent::updateOrCreate(
             ['lesson_id' => $lesson->id, 'stage' => $stage],
-            ['content' => $validated['content'] ?? '', 'content_type' => $contentType]
+            [
+                'content' => $validated['content'] ?? '',
+                'content_type' => $contentType,
+                'activity_mode' => $validated['activity_mode'] ?? 'chat',
+            ]
         );
 
         return response()->json([
             'success' => true,
             'message' => 'Stage content saved.',
             'data'    => $stageContent
+        ]);
+    }
+
+    public function upsertEngageMcq(Request $request, Lesson $lesson, string $stage)
+    {
+        if ($stage !== 'engage') {
+            return response()->json(['error' => 'Engage MCQ is only available for the engage stage'], 422);
+        }
+
+        $validated = $request->validate([
+            'question' => 'required|string',
+            'option_a' => 'required|string|max:255',
+            'option_b' => 'required|string|max:255',
+            'option_c' => 'required|string|max:255',
+            'option_d' => 'required|string|max:255',
+            'correct_option' => ['required', Rule::in(['a', 'b', 'c', 'd'])],
+            'feedback_option_a' => 'nullable|string',
+            'feedback_option_b' => 'nullable|string',
+            'feedback_option_c' => 'nullable|string',
+            'feedback_option_d' => 'nullable|string',
+        ]);
+
+        LessonStageContent::updateOrCreate(
+            ['lesson_id' => $lesson->id, 'stage' => $stage],
+            ['activity_mode' => 'mcq']
+        );
+
+        $question = EngageMcqQuestion::updateOrCreate(
+            ['lesson_id' => $lesson->id, 'stage' => $stage],
+            $validated
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Engage MCQ saved.',
+            'data' => $question,
+        ]);
+    }
+
+    public function destroyEngageMcq(Lesson $lesson, string $stage)
+    {
+        if ($stage !== 'engage') {
+            return response()->json(['error' => 'Engage MCQ is only available for the engage stage'], 422);
+        }
+
+        $question = EngageMcqQuestion::where('lesson_id', $lesson->id)
+            ->where('stage', $stage)
+            ->first();
+
+        if (!$question) {
+            return response()->json(['error' => 'Engage MCQ not found'], 404);
+        }
+
+        $question->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Engage MCQ deleted.',
         ]);
     }
 
