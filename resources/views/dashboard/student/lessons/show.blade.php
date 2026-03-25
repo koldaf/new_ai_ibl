@@ -627,7 +627,10 @@ $(document).ready(function() {
                 }, 2000);
             },
             error: function(xhr) {
-                alert('Error submitting quiz.');
+                var message = (xhr.responseJSON && (xhr.responseJSON.message || xhr.responseJSON.error))
+                    ? (xhr.responseJSON.message || xhr.responseJSON.error)
+                    : 'Error submitting quiz.';
+                alert(message);
             }
         });
     });

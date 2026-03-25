@@ -97,6 +97,7 @@
                 <table class="table mb-0">
                     <thead>
                         <tr>
+                            <th>#</th>
                             <th>Learner</th>
                             <th>Overall Progress</th>
                             <th>Stage Status</th>
@@ -106,9 +107,10 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @forelse($studentRows as $row)
+                        @forelse($studentRows as $index => $row)
                             <tr>
-                                <td class="fw-semibold">{{ $row['user']->name }}</td>
+                                <td class="fw-semibold">{{ $index + 1 }}</td>
+                                <td class="fw-semibold">{{ ucfirst($row['user']->name) }}</td>
                                 <td style="min-width: 170px;">
                                     <div class="small fw-semibold mb-1">{{ $row['overall_progress'] }}%</div>
                                     <div class="progress" style="height: 8px;">

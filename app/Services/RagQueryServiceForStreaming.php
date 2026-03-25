@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Course;
 use App\Models\RagConversation;
+use App\Services\AiPerformanceLogger;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use LLPhant\Embeddings\VectorStores\FileSystem\FileSystemVectorStore;
@@ -57,7 +58,11 @@ class RagQueryServiceForStreaming
         $context = $this->buildContext($relevantDocuments);
 
         // Step 4: Generate answer
-        $answer = $this->generateAnswer($question, $context);
+        $answer = $this->generateAnswer($question, $context, [
+            'user_id'          => $userId,
+            'question_snippet' => $question,
+            'context_chunks'   => count($relevantDocuments),
+        ]);
 
         // Step 5: Extract sources
         $sources = $this->extractSources($relevantDocuments);
@@ -132,6 +137,10 @@ class RagQueryServiceForStreaming
         $prompt = $this->buildPrompt($question, $context);
 
         $client = Http::timeout(120)->withOptions(['stream' => true]);
+
+        $requestSentAt   = microtime(true);
+        $firstTokenMs    = null;   // wall-clock TTFT
+        $lastDoneData    = [];     // final Ollama chunk contains perf metadata
         
         $response = $client->post("{$this->ollamaUrl}/api/generate", [
             'model' => $this->llmModel,
@@ -153,6 +162,10 @@ class RagQueryServiceForStreaming
                 
                 if (isset($data['response'])) {
                     $token = $data['response'];
+                    // Capture first-token arrival time (TTFT)
+                    if ($firstTokenMs === null && $token !== '') {
+                        $firstTokenMs = (microtime(true) - $requestSentAt) * 1000;
+                    }
                     $fullAnswer .= $token;
                     
                     yield json_encode([
@@ -163,6 +176,7 @@ class RagQueryServiceForStreaming
                 }
 
                 if (isset($data['done']) && $data['done']) {
+                    $lastDoneData = $data; // contains eval_count, eval_duration, etc.
                     break;
                 }
             } catch (\Exception $e) {
@@ -172,6 +186,20 @@ class RagQueryServiceForStreaming
 
         // Calculate response time
         $responseTime = (int)((microtime(true) - $startTime) * 1000);
+
+        // Log to AI performance table
+        AiPerformanceLogger::log(
+            $lastDoneData,
+            (float) $responseTime,
+            [
+                'caller'           => 'stream_query',
+                'model_name'       => $this->llmModel,
+                'user_id'          => $userId,
+                'question_snippet' => $question,
+                'context_chunks'   => count($relevantDocuments),
+                'ttft_ms'          => $firstTokenMs,  // wall-clock TTFT overrides Ollama prompt_eval_duration
+            ]
+        );
 
         // Save conversation history
         RagConversation::create([
@@ -262,9 +290,10 @@ class RagQueryServiceForStreaming
     /**
      * Generate answer using Ollama LLM (non-streaming)
      */
-    private function generateAnswer(string $question, string $context): string
+    private function generateAnswer(string $question, string $context, array $logContext = []): string
     {
         $prompt = $this->buildPrompt($question, $context);
+        $callStart = microtime(true);
 
         try {
             $response = Http::timeout(120)->post("{$this->ollamaUrl}/api/generate", [
@@ -273,12 +302,25 @@ class RagQueryServiceForStreaming
                 'stream' => false,
             ]);
 
+            $wallClockMs = (microtime(true) - $callStart) * 1000;
+
             if ($response->failed()) {
+                AiPerformanceLogger::logError(
+                    $wallClockMs,
+                    array_merge(['caller' => 'stream_query', 'model_name' => $this->llmModel], $logContext),
+                    "Ollama API request failed: {$response->status()}"
+                );
                 throw new \Exception("Ollama API request failed: " . $response->body());
             }
 
             $data = $response->json();
-            
+
+            AiPerformanceLogger::log(
+                is_array($data) ? $data : [],
+                $wallClockMs,
+                array_merge(['caller' => 'stream_query', 'model_name' => $this->llmModel], $logContext)
+            );
+
             return $data['response'] ?? 'Sorry, I could not generate an answer.';
             
         } catch (\Exception $e) {

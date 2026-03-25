@@ -487,10 +487,14 @@
 
                     mediaList.append(mediaHtml);
                     form[0].reset(); // reset form
-                    alert('File uploaded successfully!');
+                    alert(response.message || 'File uploaded successfully!');
                 },
                 error: function(xhr) {
-                    alert('Upload failed: ' + (xhr.responseJSON.error || 'Unknown error'));
+                    console.log(xhr);
+                    var message = (xhr.responseJSON && (xhr.responseJSON.message || xhr.responseJSON.error))
+                        ? (xhr.responseJSON.message || xhr.responseJSON.error)
+                        : 'Unknown error';
+                    alert('Upload failed: ' + message);
                 }
             });
         });
@@ -612,10 +616,13 @@
                     if (mediaList.find('.media-item').length === 0) {
                         mediaList.append('<p class="no-media">No media uploaded yet.</p>');
                     }
-                    alert('Media deleted.');
+                    alert(response.message || 'Media deleted.');
                 },
-                error: function() {
-                    alert('Error deleting media.');
+                error: function(xhr) {
+                    var message = (xhr.responseJSON && (xhr.responseJSON.message || xhr.responseJSON.error))
+                        ? (xhr.responseJSON.message || xhr.responseJSON.error)
+                        : 'Unknown error';
+                    alert('Error deleting media: ' + message);
                 }
             });
         });

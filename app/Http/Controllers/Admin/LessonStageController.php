@@ -10,6 +10,7 @@ use App\Models\LessonMisconception;
 use App\Models\LessonStageContent;
 use App\Models\QuizQuestion;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
@@ -143,41 +144,51 @@ class LessonStageController extends Controller
         if (!in_array(strtolower($extension), $allowedMimes[$mediaType])) {
             return response()->json(['error' => 'Invalid file type for selected media category.'], 422);
         }
-        // Store file
-        $path = $file->store("lessons/{$lesson->id}/{$stage}", 'public');
 
+        $path = null;
 
-        // Create media record
-        $media = LessonMedia::create([
-            'lesson_id'   => $lesson->id,
-            'stage'       => $stage,
-            'media_type'  => $mediaType,
-            'file_path'   => $path,
-            'file_name'   => $file->getClientOriginalName(),
-            'title'       => $request->input('title'),
-            'description' => $request->input('description'),
-            'order'       => LessonMedia::where('lesson_id', $lesson->id)->where('stage', $stage)->count() + 1,
-        ]);
+        try {
+            // Store the file first, then keep DB changes transactional.
+            $path = $file->store("lessons/{$lesson->id}/{$stage}", 'public');
 
-        // If it's a CSV for evaluate stage, import quiz questions
-        if ($mediaType === 'csv' && $stage === 'evaluate') {
-            try {
+            DB::beginTransaction();
+
+            $media = LessonMedia::create([
+                'lesson_id'   => $lesson->id,
+                'stage'       => $stage,
+                'media_type'  => $mediaType,
+                'file_path'   => $path,
+                'file_name'   => $file->getClientOriginalName(),
+                'title'       => $request->input('title'),
+                'description' => $request->input('description'),
+                'order'       => LessonMedia::where('lesson_id', $lesson->id)->where('stage', $stage)->count() + 1,
+            ]);
+
+            $message = 'File uploaded successfully.';
+
+            if ($mediaType === 'csv' && $stage === 'evaluate') {
                 $importCount = $this->importQuizQuestionsFromCsv($file->getRealPath(), $lesson->id);
-                // Optionally delete previous questions? We'll replace them.
-                // Already done inside import method.
-            } catch (\Exception $e) {
-                // If import fails, delete the uploaded file and media record? Or keep but report error.
-                // We'll keep the file but return error.
-                return response()->json([
-                    'success' => false,
-                    'message' => 'CSV upload failed: ' . $e->getMessage(),
-                ], 422);
+                $message = "CSV uploaded successfully. Imported {$importCount} question(s).";
             }
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            if ($path) {
+                Storage::disk('public')->delete($path);
+            }
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Upload failed: ' . $e->getMessage(),
+                'message' => 'Upload failed: ' . $e->getMessage(),
+            ], 422);
         }
 
         return response()->json([
             'success' => true,
-            'message' => 'File uploaded successfully.',
+            'message' => $message,
             'media'   => [
                 'id'         => $media->id,
                 'url'        => $media->url,
@@ -207,6 +218,18 @@ class LessonStageController extends Controller
         // Read header
         $header = fgetcsv($handle);
         $expectedHeader = ['question', 'option_a', 'option_b', 'option_c', 'option_d', 'correct_option'];
+
+        if ($header === false) {
+            fclose($handle);
+            throw new \Exception('CSV file is empty.');
+        }
+
+        $header = array_map(function ($value) {
+            $value = (string) $value;
+            $value = preg_replace('/^\xEF\xBB\xBF/', '', $value);
+
+            return strtolower(trim($value));
+        }, $header);
 
         if ($header !== $expectedHeader) {
             fclose($handle);
@@ -254,8 +277,21 @@ class LessonStageController extends Controller
     /**
      * Delete a media file.
      */
-    public function destroyMedia(LessonMedia $media)
+    public function destroyMedia(Lesson $lesson, string $stage, $media)
     {
+        if (!$this->isValidStage($stage)) {
+            return response()->json(['error' => 'Invalid stage'], 422);
+        }
+
+        $media = LessonMedia::whereKey($media)
+            ->where('lesson_id', $lesson->id)
+            ->where('stage', $stage)
+            ->first();
+
+        if (!$media) {
+            return response()->json(['error' => 'Media not found for this lesson stage.'], 404);
+        }
+
         // Delete file from storage
         Storage::disk('public')->delete($media->file_path);
 

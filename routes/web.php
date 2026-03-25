@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\LessonController;
 use App\Http\Controllers\Admin\LessonStageController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Admin\AiPerformanceController;
 use App\Http\Controllers\Students\LessonController as StudentLessonController;
 use App\Http\Controllers\Students\QuizController;
 use App\Http\Controllers\Students\AIChatController;
@@ -85,6 +86,14 @@ Route::prefix('admin')
                 Route::delete('/{stage}/engage-mcq', [LessonStageController::class, 'destroyEngageMcq'])
                     ->name('engage-mcq.destroy');
             });
+
+        // AI Performance Monitor
+        Route::get('/ai-performance', [AiPerformanceController::class, 'index'])
+            ->name('ai-performance.index');
+        Route::get('/ai-performance/live-stats', [AiPerformanceController::class, 'liveStats'])
+            ->name('ai-performance.live-stats');
+        Route::get('/ai-performance/chart-data', [AiPerformanceController::class, 'chartData'])
+            ->name('ai-performance.chart-data');
     });
 
 /*

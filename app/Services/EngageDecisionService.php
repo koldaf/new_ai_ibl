@@ -137,7 +137,12 @@ class EngageDecisionService
                 "Lesson context:\n<CONTEXT>\n{$context}\n</CONTEXT>\n\n" .
                 "Student answer: {$answer}";
 
-            $raw = trim($this->ragService->callLlm($prompt, $system, 200));
+            $raw = trim($this->ragService->callLlm($prompt, $system, 200, [
+                'caller'           => 'engage_decision',
+                'lesson_id'        => $lesson->id,
+                'stage'            => 'engage',
+                'question_snippet' => $answer,
+            ]));
             $decoded = $this->decodeRagJson($raw);
 
             if (!is_array($decoded)) {

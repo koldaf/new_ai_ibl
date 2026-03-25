@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Lesson;
 use App\Models\LessonEmbedding;
+use App\Services\AiPerformanceLogger;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -17,6 +18,8 @@ class RagQueryService
     private OllamaEmbeddingGenerator $embeddingGenerator;
     private string $llmModel;
     private string $ollamaUrl;
+    /** Tracks the chunk count set by retrieveContext() so callLlm() logContext can include it. */
+    private int $lastChunkCount = 0;
 
     public function __construct()
     {
@@ -78,11 +81,18 @@ class RagQueryService
         $context = $this->retrieveContext($lesson, $query, $topK);
 
         if (empty($context)) {
-            return 'Not in context.';
+            return 'Not in context. Ask another question, please keep it short and specific.';
         }
 
         // 4. Generate response using stage-specific strict prompt
-        $answer = $this->generateLlmResponse($query, $context, $stage);
+        $logContext = [
+            'caller'           => 'rag_query',
+            'lesson_id'        => $lessonId,
+            'stage'            => $stage,
+            'question_snippet' => $query,
+            'context_chunks'   => $this->lastChunkCount,
+        ];
+        $answer = $this->generateLlmResponse($query, $context, $stage, $logContext);
 
         Log::info('[RAG Query] Response generated', [
             'lesson_id' => $lessonId,
@@ -120,9 +130,11 @@ class RagQueryService
                 $context .= trim($doc->content) . "\n\n";
             }
 
+            $this->lastChunkCount = count($similarDocuments);
+
             Log::debug('[RAG Query] Context retrieved', [
                 'lesson_id' => $lesson->id,
-                'chunks_found' => count($similarDocuments),
+                'chunks_found' => $this->lastChunkCount,
                 'context_length' => strlen($context),
             ]);
 
@@ -159,9 +171,12 @@ class RagQueryService
 
     /**
      * Generic Ollama LLM call for internal and cross-service use.
+     *
+     * @param array $logContext Optional performance-log metadata (caller, lesson_id, stage, etc.)
      */
-    public function callLlm(string $prompt, string $system, int $maxTokens = 80): string
+    public function callLlm(string $prompt, string $system, int $maxTokens = 80, array $logContext = []): string
     {
+        $callStart = microtime(true);
         try {
             $response = Http::timeout(180)
                 ->post("{$this->ollamaUrl}/api/generate", [
@@ -175,7 +190,14 @@ class RagQueryService
                     ],
                 ]);
 
+            $wallClockMs = (microtime(true) - $callStart) * 1000;
+
             if ($response->failed()) {
+                AiPerformanceLogger::logError(
+                    $wallClockMs,
+                    array_merge(['caller' => 'rag_query', 'model_name' => $this->llmModel], $logContext),
+                    "Ollama API request failed: {$response->status()}"
+                );
                 throw new \RuntimeException(
                     "Ollama API request failed: {$response->body()}"
                 );
@@ -188,6 +210,12 @@ class RagQueryService
                     'Unexpected response format from Ollama'
                 );
             }
+
+            AiPerformanceLogger::log(
+                $data,
+                $wallClockMs,
+                array_merge(['caller' => 'rag_query', 'model_name' => $this->llmModel], $logContext)
+            );
 
             return trim($data['response']);
 
@@ -225,13 +253,14 @@ class RagQueryService
     private function generateLlmResponse(
         string $query,
         string $context,
-        ?string $stage = 'engage'
+        ?string $stage = 'engage',
+        array $logContext = []
     ): string {
         $system = $this->buildStageSystemPrompt($stage ?? 'engage');
 
         $userPrompt = "<CONTEXT>\n{$context}\n</CONTEXT>\n\nQuestion: {$query}";
 
-        return $this->callLlm($userPrompt, $system, 80);
+        return $this->callLlm($userPrompt, $system, 80, $logContext);
     }
 
     /**
@@ -253,7 +282,7 @@ class RagQueryService
         return "You are assisting the '{$normalizedStage}' stage of a lesson. {$stageDirective}\n\n" .
             "<CONTEXT>\n{{retrieved_chunks}}\n</CONTEXT>\n\n" .
             "You must answer ONLY using the information inside <CONTEXT>.\n" .
-            "If the answer is not present, say: \"Not in context.\"\n" .
+            "If the answer is not present, say: \"Oh, I am not sure, please ask another question.\"\n" .
             "Keep the answer under 30 words.";
     }
 

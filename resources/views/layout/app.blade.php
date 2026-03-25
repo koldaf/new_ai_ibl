@@ -510,6 +510,13 @@
                     </a>
                 </div>
             </div>
+
+            {{-- AI Performance Monitor --}}
+            <a href="{{ route('admin.ai-performance.index') }}"
+               class="nav-item-link {{ request()->routeIs('admin.ai-performance.*') ? 'active' : '' }}">
+                <i class="bi bi-speedometer2"></i>
+                <span>AI Monitor</span>
+            </a>
             @endif
             @if(auth()->user()->role === 'student')
                 {{-- My Lessons --}}
