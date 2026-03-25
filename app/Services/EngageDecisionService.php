@@ -14,7 +14,10 @@ class EngageDecisionService
 {
     private const MAX_FOLLOWUPS = 2;
 
-    public function __construct(private readonly RagQueryService $ragService)
+    public function __construct(
+        private readonly RagQueryService $ragService,
+        private readonly AiMemoryService $memoryService
+    )
     {
     }
 
@@ -24,7 +27,7 @@ class EngageDecisionService
         $stageContent = optional($lesson->getStageContent('engage'))->content;
         $contextText = trim(strip_tags((string) $stageContent));
 
-        $history = AiChatMessage::query()
+        $lessonHistory = AiChatMessage::query()
             ->where('user_id', $user->id)
             ->where('lesson_id', $lesson->id)
             ->where('stage', 'engage')
@@ -32,7 +35,10 @@ class EngageDecisionService
             ->take(3)
             ->get();
 
-        $turnIndex = (int) $history->count() + 1;
+        $memoryHistory = $this->memoryService->getHistoryForPrompt($user, $lesson, 'engage', 4);
+        $memoryContext = $this->memoryService->buildPromptContext($memoryHistory, $lesson->id);
+
+        $turnIndex = (int) $lessonHistory->count() + 1;
 
         $templateMatch = $this->detectTemplateMisconception($lesson->id, $answer);
         $ragDecision = null;
@@ -41,7 +47,7 @@ class EngageDecisionService
         if ($templateMatch !== null) {
             [$classification, $confidence] = ['misconception', 0.82];
         } else {
-            $ragDecision = $this->classifyWithRag($lesson, $answer);
+            $ragDecision = $this->classifyWithRag($lesson, $answer, $user->name, $memoryContext);
 
             if ($ragDecision !== null) {
                 $classification = $ragDecision['classification'];
@@ -52,7 +58,7 @@ class EngageDecisionService
             }
         }
 
-        $followupsUsed = (int) $history->filter(fn (AiChatMessage $row) => !empty($row->follow_up_question))->count();
+        $followupsUsed = (int) $lessonHistory->filter(fn (AiChatMessage $row) => !empty($row->follow_up_question))->count();
         $needsFollowup = in_array($classification, ['partial', 'misconception', 'off_topic'], true);
 
         $followUpQuestion = null;
@@ -67,7 +73,7 @@ class EngageDecisionService
             $completionReason = 'max_followups_reached';
         } elseif ($needsFollowup) {
             $followUpQuestion = $ragDecision['follow_up']
-                ?? $this->buildFollowupQuestion($classification, $contextText, $answer);
+                ?? $this->buildFollowupQuestion($classification, $contextText, $answer, $user->name);
         }
 
         [$misconceptionId, $misconceptionSource] = $this->persistMisconception(
@@ -80,7 +86,7 @@ class EngageDecisionService
         );
 
         $feedback = $ragDecision['feedback']
-            ?? $this->buildFeedback($classification, $contextText, $followUpQuestion);
+            ?? $this->buildFeedback($classification, $contextText, $followUpQuestion, $user->name);
 
         return [
             'classification' => $classification,
@@ -104,7 +110,7 @@ class EngageDecisionService
         ];
     }
 
-    private function classifyWithRag(Lesson $lesson, string $answer): ?array
+    private function classifyWithRag(Lesson $lesson, string $answer, string $userName, string $memoryContext = ''): ?array
     {
         if (str_word_count($answer) < 4) {
             return null;
@@ -127,14 +133,20 @@ class EngageDecisionService
             $system = 'You are an educational assistant for engage-stage formative assessment. ' .
                 'Return only valid JSON. No markdown, no explanation.';
 
+            $memoryBlock = $memoryContext !== ''
+                ? "Recent student memory:\n<MEMORY>\n{$memoryContext}\n</MEMORY>\n\n"
+                : '';
+
             $prompt = "Classify the student answer using the lesson context.\n\n" .
                 "Allowed classification values: correct, partial, misconception, off_topic.\n" .
                 "Confidence must be a number between 0 and 1.\n" .
                 "Feedback should be one concise sentence.\n" .
                 "Follow-up should be null when classification is correct; otherwise ask one short coaching question.\n\n" .
+                "The student's name is {$userName}. Use it only when it feels natural.\n\n" .
                 "Return exactly this JSON shape:\n" .
                 "{\"classification\":\"correct|partial|misconception|off_topic\",\"confidence\":0.0,\"feedback\":\"...\",\"follow_up\":\"... or null\"}\n\n" .
                 "Lesson context:\n<CONTEXT>\n{$context}\n</CONTEXT>\n\n" .
+                $memoryBlock .
                 "Student answer: {$answer}";
 
             $raw = trim($this->ragService->callLlm($prompt, $system, 200, [
@@ -209,7 +221,7 @@ class EngageDecisionService
         return is_array($decoded) ? $decoded : null;
     }
 
-    public function generateStartQuestion(Lesson $lesson): array
+    public function generateStartQuestion(Lesson $lesson, ?User $user = null): array
     {
         $stageContent = optional($lesson->getStageContent('engage'))->content;
         $contextText = trim(strip_tags((string) $stageContent));
@@ -218,7 +230,9 @@ class EngageDecisionService
         $topic = $this->deriveTopic($contextText);
 
         if ($contextText === '') {
-            $question = 'What do you already know about this topic from real life?';
+            $question = $user
+                ? "What do you already know about this topic from real life, {$user->name}?"
+                : 'What do you already know about this topic from real life?';
             return [
                 'answer' => $question,
                 'feedback_text' => 'Let us activate your prior knowledge first.',
@@ -240,6 +254,10 @@ class EngageDecisionService
             $question = end($lines) ?: "Based on this scenario: {$snippet} What do you already know about {$topic}?";
         } else {
             $question = "Based on this scenario: {$snippet} What do you already know about {$topic}?";
+        }
+
+        if ($user) {
+            $question .= " {$user->name}, start with your first idea.";
         }
 
         return [
@@ -368,28 +386,31 @@ class EngageDecisionService
         return [$misconception?->id, $source];
     }
 
-    private function buildFollowupQuestion(string $classification, string $contextText, string $answer): string
+    private function buildFollowupQuestion(string $classification, string $contextText, string $answer, ?string $userName = null): string
     {
         $topic = $this->deriveTopic($contextText);
+        $prefix = $userName ? $userName . ', ' : '';
 
         if ($classification === 'misconception') {
-            return "Can you revisit your idea and explain how {$topic} works in the scenario evidence?";
+            return "{$prefix}can you revisit your idea and explain how {$topic} works in the scenario evidence?";
         }
 
         if ($classification === 'partial') {
-            return "Good start. What key detail about {$topic} is still missing in your explanation?";
+            return "{$prefix}good start. What key detail about {$topic} is still missing in your explanation?";
         }
 
-        return "Let us refocus: which part of the scenario best shows {$topic}?";
+        return "{$prefix}let us refocus: which part of the scenario best shows {$topic}?";
     }
 
-    private function buildFeedback(string $classification, string $contextText, ?string $followUpQuestion): string
+    private function buildFeedback(string $classification, string $contextText, ?string $followUpQuestion, ?string $userName = null): string
     {
+        $prefix = $userName ? $userName . ', ' : '';
+
         return match ($classification) {
-            'correct' => 'Your response aligns with the scenario. Great prior knowledge activation.',
-            'partial' => 'Your response is partly correct, but one key concept is missing.',
-            'misconception' => 'I noticed a misconception in your response. Let us correct it before moving on.',
-            default => 'Your response seems off-topic for this scenario.',
+            'correct' => $prefix . 'your response aligns with the scenario. Great prior knowledge activation.',
+            'partial' => $prefix . 'your response is partly correct, but one key concept is missing.',
+            'misconception' => $prefix . 'I noticed a misconception in your response. Let us correct it before moving on.',
+            default => $prefix . 'your response seems off-topic for this scenario.',
         };
     }
 

@@ -484,6 +484,12 @@
                 <span>Users</span>
             </a>
 
+            <a href="{{ route('admin.settings.index') }}"
+               class="nav-item-link {{ request()->routeIs('admin.settings.*') ? 'active' : '' }}">
+                <i class="bi bi-gear"></i>
+                <span>Settings</span>
+            </a>
+
             {{-- Lesson Setup --}}
             <a class="nav-item-link {{ request()->routeIs('admin.lessons.*') ? 'active' : '' }}"
                data-bs-toggle="collapse"
@@ -589,7 +595,7 @@
                         </a>
                     </li>
                     <li>
-                        <a class="dropdown-item" href="#">
+                        <a class="dropdown-item" href="{{ auth()->user()->role === 'admin' ? route('admin.settings.index') : '#' }}">
                             <i class="bi bi-gear"></i> Settings
                         </a>
                     </li>

@@ -47,7 +47,10 @@ class RagQueryService
         string $query,
         int $lessonId,
         ?string $stage = 'engage',
-        int $topK = 5
+        ?string $userName = null,
+        int $topK = 5,
+        string $memoryContext = '',
+        bool $memoryEnabled = false
     ): string {
         // 1. Load the lesson and validate it has embeddings
         $lesson = Lesson::findOrFail($lessonId);
@@ -80,8 +83,8 @@ class RagQueryService
         // 3. Retrieve relevant context from the vector store
         $context = $this->retrieveContext($lesson, $query, $topK);
 
-        if (empty($context)) {
-            return 'Not in context. Ask another question, please keep it short and specific.';
+        if (empty($context) && (!$memoryEnabled || trim($memoryContext) === '')) {
+            return $this->outOfContextResponse($userName, false);
         }
 
         // 4. Generate response using stage-specific strict prompt
@@ -90,9 +93,11 @@ class RagQueryService
             'lesson_id'        => $lessonId,
             'stage'            => $stage,
             'question_snippet' => $query,
+            'user_name'        => $userName,
             'context_chunks'   => $this->lastChunkCount,
+            'memory_enabled'   => $memoryEnabled,
         ];
-        $answer = $this->generateLlmResponse($query, $context, $stage, $logContext);
+        $answer = $this->generateLlmResponse($query, $context, $stage, $userName, $memoryContext, $memoryEnabled, $logContext);
 
         Log::info('[RAG Query] Response generated', [
             'lesson_id' => $lessonId,
@@ -254,11 +259,25 @@ class RagQueryService
         string $query,
         string $context,
         ?string $stage = 'engage',
+        ?string $userName = null,
+        string $memoryContext = '',
+        bool $memoryEnabled = false,
         array $logContext = []
     ): string {
-        $system = $this->buildStageSystemPrompt($stage ?? 'engage');
+        $system = $this->buildStageSystemPrompt($stage ?? 'engage', $userName, $memoryEnabled);
 
-        $userPrompt = "<CONTEXT>\n{$context}\n</CONTEXT>\n\nQuestion: {$query}";
+        $promptSections = [];
+
+        if ($context !== '') {
+            $promptSections[] = "<LESSON_CONTEXT>\n{$context}\n</LESSON_CONTEXT>";
+        }
+
+        if ($memoryEnabled && $memoryContext !== '') {
+            $promptSections[] = "<MEMORY_CONTEXT>\n{$memoryContext}\n</MEMORY_CONTEXT>";
+        }
+
+        $promptSections[] = "Question: {$query}";
+        $userPrompt = implode("\n\n", $promptSections);
 
         return $this->callLlm($userPrompt, $system, 80, $logContext);
     }
@@ -266,7 +285,7 @@ class RagQueryService
     /**
      * Build strict, stage-specific system prompts.
      */
-    private function buildStageSystemPrompt(string $stage): string
+    private function buildStageSystemPrompt(string $stage, ?string $userName = null, bool $memoryEnabled = false): string
     {
         $normalizedStage = in_array($stage, self::STAGES, true) ? $stage : 'engage';
 
@@ -279,11 +298,25 @@ class RagQueryService
             default => 'Focus on accurate, concise instructional support.',
         };
 
+        $studentName = $userName ?: 'the student';
+        $memoryRule = $memoryEnabled
+            ? 'Use LESSON_CONTEXT first. You may also use MEMORY_CONTEXT from the same student, including prior lessons, when it clearly helps answer the question.'
+            : 'Answer strictly from LESSON_CONTEXT. Ignore any implied memory outside the current lesson.';
+
         return "You are assisting the '{$normalizedStage}' stage of a lesson. {$stageDirective}\n\n" .
-            "<CONTEXT>\n{{retrieved_chunks}}\n</CONTEXT>\n\n" .
-            "You must answer ONLY using the information inside <CONTEXT>.\n" .
-            "If the answer is not present, say: \"Oh, I am not sure, please ask another question.\"\n" .
+            "The student is {$studentName}. Use the name only when it feels natural.\n" .
+            "{$memoryRule}\n" .
+            "If the available context does not contain the answer, say: \"Your question is out of context for this lesson.\"\n" .
             "Keep the answer under 30 words.";
+    }
+
+    private function outOfContextResponse(?string $userName, bool $includeName = true): string
+    {
+        if ($includeName && $userName) {
+            return "{$userName}, your question is out of context for this lesson.";
+        }
+
+        return 'Your question is out of context for this lesson.';
     }
 
     /**

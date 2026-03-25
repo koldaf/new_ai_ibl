@@ -5,6 +5,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\LessonController;
 use App\Http\Controllers\Admin\LessonStageController;
+use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\AiPerformanceController;
 use App\Http\Controllers\Students\LessonController as StudentLessonController;
@@ -47,6 +48,11 @@ Route::prefix('admin')
             ->name('dashboard');
 
         Route::resource('users', UserController::class)->except(['show']);
+
+        Route::get('/settings', [SettingsController::class, 'index'])
+            ->name('settings.index');
+        Route::patch('/settings', [SettingsController::class, 'update'])
+            ->name('settings.update');
 
         // Lessons — exclude 'show' since admins manage, not view
         Route::resource('lessons', LessonController::class)

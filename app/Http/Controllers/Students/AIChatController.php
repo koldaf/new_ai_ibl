@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Students;
 use App\Http\Controllers\Controller;
 use App\Models\Lesson;
 use App\Models\AiChatMessage;
+use App\Services\AiMemoryService;
 use App\Services\EngageDecisionService;
 use App\Services\RagQueryService;
 use Illuminate\Http\Request;
@@ -13,11 +14,17 @@ class AIChatController extends Controller
 {
     protected RagQueryService $ragQueryService;
     protected EngageDecisionService $engageDecisionService;
+    protected AiMemoryService $memoryService;
 
-    public function __construct(RagQueryService $ragQueryService, EngageDecisionService $engageDecisionService)
+    public function __construct(
+        RagQueryService $ragQueryService,
+        EngageDecisionService $engageDecisionService,
+        AiMemoryService $memoryService
+    )
     {
         $this->ragQueryService = $ragQueryService;
         $this->engageDecisionService = $engageDecisionService;
+        $this->memoryService = $memoryService;
     }
 
     public function ask(Request $request, Lesson $lesson)
@@ -41,7 +48,7 @@ class AIChatController extends Controller
                 }
 
                 $payload = $intent === 'start'
-                    ? $this->engageDecisionService->generateStartQuestion($lesson)
+                    ? $this->engageDecisionService->generateStartQuestion($lesson, $request->user())
                     : $this->engageDecisionService->assessAnswer($lesson, $request->user(), $request->question);
 
                 $parentMessage = AiChatMessage::query()
@@ -84,10 +91,17 @@ class AIChatController extends Controller
                 ]);
             }
 
+            $memoryHistory = $this->memoryService->getHistoryForPrompt($request->user(), $lesson);
+            $memoryContext = $this->memoryService->buildPromptContext($memoryHistory, $lesson->id);
+
             $answer = $this->ragQueryService->generateResponse(
                 $request->question,
                 $lesson->id,
-                $stage
+                $stage,
+                $request->user()->name,
+                5,
+                $memoryContext,
+                $this->memoryService->isEnabled()
             );
 
             AIChatMessage::create([
