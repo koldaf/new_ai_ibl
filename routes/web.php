@@ -87,6 +87,20 @@ Route::prefix('admin')
                     ->name('misconceptions.update');
                 Route::delete('/{stage}/misconceptions/{misconception}', [LessonStageController::class, 'destroyMisconception'])
                     ->name('misconceptions.destroy');
+                Route::post('/{stage}/checkpoint-questions', [LessonStageController::class, 'storeCheckpointQuestion'])
+                    ->name('checkpoint-questions.store');
+                Route::patch('/{stage}/checkpoint-questions/{question}', [LessonStageController::class, 'updateCheckpointQuestion'])
+                    ->name('checkpoint-questions.update');
+                Route::delete('/{stage}/checkpoint-questions/{question}', [LessonStageController::class, 'destroyCheckpointQuestion'])
+                    ->name('checkpoint-questions.destroy');
+                Route::post('/{stage}/checkpoint-corpus', [LessonStageController::class, 'uploadCheckpointCorpus'])
+                    ->name('checkpoint-corpus.store');
+                Route::delete('/{stage}/checkpoint-corpus/{corpus}', [LessonStageController::class, 'destroyCheckpointCorpus'])
+                    ->name('checkpoint-corpus.destroy');
+                Route::get('/{stage}/checkpoint-corpus/{corpus}/status', [LessonStageController::class, 'getCheckpointCorpusStatus'])
+                    ->name('checkpoint-corpus.status');
+                Route::post('/{stage}/checkpoint-corpus/{corpus}/reprocess', [LessonStageController::class, 'reprocessCheckpointCorpus'])
+                    ->name('checkpoint-corpus.reprocess');
                 Route::post('/{stage}/engage-mcq', [LessonStageController::class, 'upsertEngageMcq'])
                     ->name('engage-mcq.upsert');
                 Route::delete('/{stage}/engage-mcq', [LessonStageController::class, 'destroyEngageMcq'])
@@ -155,4 +169,7 @@ Route::prefix('teacher')
 
         Route::get('/lessons/{lesson}/export', [TeacherDashboardController::class, 'exportLesson'])
             ->name('lessons.export');
+
+        Route::get('/lessons/{lesson}/students/{student}', [TeacherDashboardController::class, 'showStudentActivity'])
+            ->name('lessons.student-activity');
     });

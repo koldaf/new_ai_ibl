@@ -299,12 +299,83 @@
                         <p class="text-info mb-0">Submit the checkpoint above to complete the Engage stage.</p>
                     @endif
                 @elseif($stage === 'explore')
+                    {{-- Explore checkpoint widget --}}
+                    @php $stageCheckpointDone = $checkpointStatus['explore'] ?? false; @endphp
+                    <div class="card mb-4 shadow-sm border-0" id="explore-checkpoint-card">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <span class="fw-semibold"><i class="fas fa-robot me-2 text-secondary"></i>Explore Checkpoint</span>
+                            <span class="badge {{ $stageCheckpointDone ? 'bg-success' : 'bg-secondary' }}" id="explore-checkpoint-badge">
+                                {{ $stageCheckpointDone ? 'Checkpoint passed' : 'In progress' }}
+                            </span>
+                        </div>
+                        <div class="card-body">
+                            <div id="explore-checkpoint-messages" class="border rounded bg-light p-3 mb-3" style="max-height: 340px; overflow-y: auto;">
+                                @if(!$stageCheckpointDone)
+                                    <div class="alert alert-info mb-0" id="explore-checkpoint-placeholder">
+                                        Denzy will post a reflection question here to assess your understanding.
+                                    </div>
+                                @else
+                                    <div class="alert alert-success mb-0">You have passed the Explore checkpoint.</div>
+                                @endif
+                            </div>
+                            @if(!$stageCheckpointDone && !$progress->explore_completed)
+                                <form id="explore-checkpoint-form">
+                                    @csrf
+                                    <div class="mb-3">
+                                        <label for="explore-checkpoint-input" class="form-label">Your answer</label>
+                                        <textarea id="explore-checkpoint-input" class="form-control" rows="3" placeholder="Type your answer here..." required disabled></textarea>
+                                    </div>
+                                    <button class="btn btn-primary" type="submit" id="explore-checkpoint-submit" disabled>Send Answer</button>
+                                </form>
+                            @endif
+                        </div>
+                    </div>
+
                     @if($exploreActivities->count() > 0)
                         <div class="mb-2 small text-muted" id="explore-complete-helper">
-                            {{ $allExploreActivitiesCompleted ? 'All Explore activities are complete. You can now mark this stage as complete.' : 'Finish all Explore activities before you mark this stage as complete.' }}
+                            {{ ($allExploreActivitiesCompleted && $stageCheckpointDone) ? 'All Explore activities and checkpoint are complete.' : 'Finish all Explore activities and the checkpoint before marking this stage as complete.' }}
                         </div>
                     @endif
-                    <button class="btn btn-success mark-complete" data-stage="{{ $stage }}" id="explore-complete-button" {{ $allExploreActivitiesCompleted ? '' : 'disabled' }}>
+                    <button class="btn btn-success mark-complete" data-stage="{{ $stage }}" id="explore-complete-button" {{ ($allExploreActivitiesCompleted && $stageCheckpointDone) ? '' : 'disabled' }}>
+                        Mark {{ ucfirst($stage) }} as Complete
+                    </button>
+                @elseif(in_array($stage, ['explain', 'elaborate']))
+                    {{-- Checkpoint widget for explain / elaborate --}}
+                    @php $stageCheckpointDone = $checkpointStatus[$stage] ?? false; @endphp
+                    <div class="card mb-4 shadow-sm border-0" id="{{ $stage }}-checkpoint-card">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <span class="fw-semibold"><i class="fas fa-robot me-2 text-secondary"></i>{{ ucfirst($stage) }} Checkpoint</span>
+                            <span class="badge {{ $stageCheckpointDone ? 'bg-success' : 'bg-secondary' }}" id="{{ $stage }}-checkpoint-badge">
+                                {{ $stageCheckpointDone ? 'Checkpoint passed' : 'In progress' }}
+                            </span>
+                        </div>
+                        <div class="card-body">
+                            <div id="{{ $stage }}-checkpoint-messages" class="border rounded bg-light p-3 mb-3" style="max-height: 340px; overflow-y: auto;">
+                                @if(!$stageCheckpointDone)
+                                    <div class="alert alert-info mb-0" id="{{ $stage }}-checkpoint-placeholder">
+                                        Denzy will post a reflection question here to assess your understanding.
+                                    </div>
+                                @else
+                                    <div class="alert alert-success mb-0">You have passed the {{ ucfirst($stage) }} checkpoint.</div>
+                                @endif
+                            </div>
+                            @if(!$stageCheckpointDone && !$progress->{$stage.'_completed'})
+                                <form id="{{ $stage }}-checkpoint-form">
+                                    @csrf
+                                    <div class="mb-3">
+                                        <label for="{{ $stage }}-checkpoint-input" class="form-label">Your answer</label>
+                                        <textarea id="{{ $stage }}-checkpoint-input" class="form-control" rows="3" placeholder="Type your answer here..." required disabled></textarea>
+                                    </div>
+                                    <button class="btn btn-primary" type="submit" id="{{ $stage }}-checkpoint-submit" disabled>Send Answer</button>
+                                </form>
+                            @endif
+                        </div>
+                    </div>
+
+                    <div class="mb-2 small text-muted" id="{{ $stage }}-complete-helper">
+                        {{ $stageCheckpointDone ? 'Checkpoint passed. You may now mark this stage complete.' : 'Complete the checkpoint discussion above before marking this stage as complete.' }}
+                    </div>
+                    <button class="btn btn-success mark-complete" data-stage="{{ $stage }}" id="{{ $stage }}-complete-button" {{ $stageCheckpointDone ? '' : 'disabled' }}>
                         Mark {{ ucfirst($stage) }} as Complete
                     </button>
                 @else
@@ -756,11 +827,175 @@ $(document).ready(function() {
         });
     });
 
+    // ── Checkpoint helpers for explore / explain / elaborate ─────────────────
+
+    var checkpointStages = ['explore', 'explain', 'elaborate'];
+    var checkpointStarted = {
+        explore:    {{ ($checkpointStatus['explore']  ?? false) ? 'true' : 'false' }},
+        explain:    {{ ($checkpointStatus['explain']  ?? false) ? 'true' : 'false' }},
+        elaborate:  {{ ($checkpointStatus['elaborate'] ?? false) ? 'true' : 'false' }},
+    };
+
+    function appendCheckpointMessage(stage, html, isStudent) {
+        var container = $('#' + stage + '-checkpoint-messages');
+        $('#' + stage + '-checkpoint-placeholder').remove();
+        if (isStudent) {
+            container.append('<div class="text-end mb-2"><span class="bg-primary text-white p-2 rounded d-inline-block">' + html + '</span></div>');
+        } else {
+            container.append('<div class="text-start mb-2"><span class="bg-white border p-2 rounded d-inline-block">' + html + '</span></div>');
+        }
+        scrollToBottom('#' + stage + '-checkpoint-messages');
+    }
+
+    function showCheckpointLoading(stage) {
+        removeCheckpointLoading(stage);
+        $('#' + stage + '-checkpoint-placeholder').remove();
+        $('#' + stage + '-checkpoint-messages').append(
+            '<div class="text-start mb-2" id="' + stage + '-checkpoint-loading">' +
+                '<span class="bg-white border p-2 rounded d-inline-block">' +
+                    '<span class="typing-loader-label">Denzy is thinking</span>' +
+                    '<span class="typing-loader-dots"><span>.</span><span>.</span><span>.</span></span>' +
+                '</span></div>'
+        );
+        scrollToBottom('#' + stage + '-checkpoint-messages');
+    }
+
+    function removeCheckpointLoading(stage) {
+        $('#' + stage + '-checkpoint-loading').remove();
+    }
+
+    function updateCheckpointCompletionState(stage, isComplete) {
+        var badge  = $('#' + stage + '-checkpoint-badge');
+        var button = $('#' + stage + '-complete-button');
+        var helper = $('#' + stage + '-complete-helper');
+
+        if (isComplete) {
+            badge.text('Checkpoint passed').removeClass('bg-secondary bg-warning').addClass('bg-success');
+            if (button.length) {
+                if (stage === 'explore') {
+                    // Explore also requires activities
+                    if (!button.prop('disabled') || button.data('activities-ok')) {
+                        button.prop('disabled', false);
+                    }
+                    button.data('checkpoint-ok', true);
+                    // Re-check both conditions
+                    var activitiesOk = button.data('activities-ok') === true || button.data('activities-ok') === undefined;
+                    button.prop('disabled', !(activitiesOk && true));
+                } else {
+                    button.prop('disabled', false);
+                }
+            }
+            if (helper.length) {
+                helper.text('Checkpoint passed. You may now mark this stage complete.');
+            }
+        } else {
+            badge.text('In progress').removeClass('bg-success bg-warning').addClass('bg-secondary');
+        }
+    }
+
+    function requestCheckpointStart(stage) {
+        if (checkpointStarted[stage]) return;
+        checkpointStarted[stage] = true;
+
+        showCheckpointLoading(stage);
+        $('#' + stage + '-checkpoint-input').prop('disabled', true);
+        $('#' + stage + '-checkpoint-submit').prop('disabled', true);
+
+        $.ajax({
+            url: '{{ route("student.lessons.ai.ask", $lesson) }}',
+            method: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}',
+                question: '__checkpoint_start__',
+                stage: stage,
+                intent: 'start'
+            },
+            success: function(response) {
+                removeCheckpointLoading(stage);
+                appendCheckpointMessage(stage, escapeHtml(response.answer).replace(/\n/g, '<br>'), false);
+                $('#' + stage + '-checkpoint-input').prop('disabled', false);
+                $('#' + stage + '-checkpoint-submit').prop('disabled', false);
+            },
+            error: function(xhr) {
+                removeCheckpointLoading(stage);
+                var msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Unable to start checkpoint';
+                appendCheckpointMessage(stage, '<span class="text-danger">Error: ' + escapeHtml(msg) + '</span>', false);
+            }
+        });
+    }
+
+    $.each(checkpointStages, function(_, stage) {
+        $('#' + stage + '-checkpoint-form').on('submit', function(e) {
+            e.preventDefault();
+            var answer = $('#' + stage + '-checkpoint-input').val();
+            if (!answer.trim()) return;
+
+            appendCheckpointMessage(stage, escapeHtml(answer).replace(/\n/g, '<br>'), true);
+            $('#' + stage + '-checkpoint-input').val('').prop('disabled', true);
+            $('#' + stage + '-checkpoint-submit').prop('disabled', true);
+            showCheckpointLoading(stage);
+
+            $.ajax({
+                url: '{{ route("student.lessons.ai.ask", $lesson) }}',
+                method: 'POST',
+                data: {
+                    _token: '{{ csrf_token() }}',
+                    question: answer,
+                    stage: stage,
+                    intent: 'answer'
+                },
+                success: function(response) {
+                    removeCheckpointLoading(stage);
+                    var msg = escapeHtml(response.answer).replace(/\n/g, '<br>');
+                    if (response.classification) {
+                        msg += '<div class="small mt-1 text-muted">Classification: ' + escapeHtml(response.classification.replace(/_/g, ' ')) + '</div>';
+                    }
+                    
+                    // Display full answer if available for explore stage (partial classification)
+                    if (response.full_answer && stage === 'explore') {
+                        msg += '<div class="border-top pt-2 mt-2"><strong>Complete answer:</strong><br>' + 
+                               escapeHtml(response.full_answer).replace(/\n/g, '<br>') + '</div>';
+                    }
+                    
+                    appendCheckpointMessage(stage, msg, false);
+
+                    if (response.engage_status === 'complete') {
+                        updateCheckpointCompletionState(stage, true);
+                        $('#' + stage + '-checkpoint-form').hide();
+                    } else if (response.follow_up_question) {
+                        // Enable input for follow-up
+                        $('#' + stage + '-checkpoint-input').prop('disabled', false);
+                        $('#' + stage + '-checkpoint-submit').prop('disabled', false);
+                        appendCheckpointMessage(stage, escapeHtml(response.follow_up_question).replace(/\n/g, '<br>'), false);
+                    } else {
+                        $('#' + stage + '-checkpoint-input').prop('disabled', false);
+                        $('#' + stage + '-checkpoint-submit').prop('disabled', false);
+                    }
+                },
+                error: function(xhr) {
+                    removeCheckpointLoading(stage);
+                    var msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Error';
+                    appendCheckpointMessage(stage, '<span class="text-danger">Error: ' + escapeHtml(msg) + '</span>', false);
+                    $('#' + stage + '-checkpoint-input').prop('disabled', false);
+                    $('#' + stage + '-checkpoint-submit').prop('disabled', false);
+                }
+            });
+        });
+    });
+
+    // ── End checkpoint helpers ────────────────────────────────────────────────
+
     $('button[data-bs-toggle="tab"]').on('shown.bs.tab', function() {
         updateDenzyVisibility();
 
-        if (engageMode === 'chat' && activeStage() === 'engage' && !engageStarted) {
+        var tab = activeStage();
+
+        if (engageMode === 'chat' && tab === 'engage' && !engageStarted) {
             requestEngageStart();
+        }
+
+        if (checkpointStages.indexOf(tab) !== -1 && !checkpointStarted[tab]) {
+            requestCheckpointStart(tab);
         }
     });
 
@@ -772,6 +1007,13 @@ $(document).ready(function() {
     if (engageMode === 'chat' && activeStage() === 'engage' && !engageStarted) {
         requestEngageStart();
     }
+
+    $.each(checkpointStages, function(_, s) {
+        if (!checkpointStarted[s]) {
+            // Pre-check: if the tab is currently active on load (unlikely but safe)
+            if (activeStage() === s) requestCheckpointStart(s);
+        }
+    });
 });
 </script>
 @endpush

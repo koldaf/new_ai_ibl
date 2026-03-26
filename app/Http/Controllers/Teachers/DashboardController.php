@@ -3,8 +3,12 @@
 namespace App\Http\Controllers\Teachers;
 
 use App\Http\Controllers\Controller;
+use App\Models\AiChatMessage;
+use App\Models\EngageMcqAttempt;
 use App\Models\Lesson;
 use App\Models\LessonProgress;
+use App\Models\QuizAttempt;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -354,6 +358,45 @@ class DashboardController extends Controller
         }, $filename, [
             'Content-Type' => 'text/csv',
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ]);
+    }
+
+    public function showStudentActivity(Lesson $lesson, User $student)
+    {
+        abort_unless((int) $lesson->teacher_id === (int) Auth::id(), 403);
+
+        $progress = LessonProgress::query()
+            ->where('user_id', $student->id)
+            ->where('lesson_id', $lesson->id)
+            ->firstOrFail();
+
+        $chatByStage = AiChatMessage::query()
+            ->where('user_id', $student->id)
+            ->where('lesson_id', $lesson->id)
+            ->orderBy('id')
+            ->get()
+            ->groupBy('stage');
+
+        $quizAttempts = QuizAttempt::query()
+            ->with('question')
+            ->where('user_id', $student->id)
+            ->where('lesson_id', $lesson->id)
+            ->get();
+
+        $engageMcqAttempt = EngageMcqAttempt::query()
+            ->where('user_id', $student->id)
+            ->where('lesson_id', $lesson->id)
+            ->latest('id')
+            ->first();
+
+        return view('dashboard.teacher.student_activity', [
+            'lesson'           => $lesson,
+            'student'          => $student,
+            'progress'         => $progress,
+            'stages'           => ['engage', 'explore', 'explain', 'elaborate', 'evaluate'],
+            'chatByStage'      => $chatByStage,
+            'quizAttempts'     => $quizAttempts,
+            'engageMcqAttempt' => $engageMcqAttempt,
         ]);
     }
 }

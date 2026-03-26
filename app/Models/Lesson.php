@@ -114,6 +114,26 @@ class Lesson extends Model
         return $this->hasMany(EngageMcqAttempt::class);
     }
 
+    public function checkpointQuestions()
+    {
+        return $this->hasMany(LessonCheckpointQuestion::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    public function checkpointCorpora()
+    {
+        return $this->hasMany(LessonCheckpointCorpus::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    public function getCheckpointQuestions(string $stage)
+    {
+        return $this->checkpointQuestions()->where('stage', $stage)->get();
+    }
+
+    public function getCheckpointCorpora(string $stage)
+    {
+        return $this->checkpointCorpora()->where('stage', $stage)->get();
+    }
+
     public function assignedTeachers()
     {
         return $this->belongsToMany(User::class, 'lesson_teacher', 'lesson_id', 'teacher_id')->withTimestamps();

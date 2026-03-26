@@ -85,6 +85,12 @@ class LessonController extends Controller
                 'media'   => $lesson->getStageMedia($stage),
                 'misconceptions' => $lesson->misconceptions()->where('stage', $stage)->latest()->get(),
                 'engageMcq' => $stage === 'engage' ? $lesson->getEngageMcqQuestion($stage) : null,
+                'checkpointQuestions' => in_array($stage, ['explore', 'explain', 'elaborate'], true)
+                    ? $lesson->getCheckpointQuestions($stage)
+                    : collect(),
+                'checkpointCorpora' => in_array($stage, ['explore', 'explain', 'elaborate'], true)
+                    ? $lesson->getCheckpointCorpora($stage)
+                    : collect(),
             ];
         }
 

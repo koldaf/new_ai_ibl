@@ -8,6 +8,7 @@ use App\Models\AiChatMessage;
 use App\Services\AiMemoryService;
 use App\Services\EngageDecisionService;
 use App\Services\RagQueryService;
+use App\Services\StageCheckpointService;
 use Illuminate\Http\Request;
 
 class AIChatController extends Controller
@@ -15,16 +16,18 @@ class AIChatController extends Controller
     protected RagQueryService $ragQueryService;
     protected EngageDecisionService $engageDecisionService;
     protected AiMemoryService $memoryService;
+    protected StageCheckpointService $checkpointService;
 
     public function __construct(
         RagQueryService $ragQueryService,
         EngageDecisionService $engageDecisionService,
-        AiMemoryService $memoryService
-    )
-    {
+        AiMemoryService $memoryService,
+        StageCheckpointService $checkpointService
+    ) {
         $this->ragQueryService = $ragQueryService;
         $this->engageDecisionService = $engageDecisionService;
         $this->memoryService = $memoryService;
+        $this->checkpointService = $checkpointService;
     }
 
     public function ask(Request $request, Lesson $lesson)
@@ -94,6 +97,11 @@ class AIChatController extends Controller
             $memoryHistory = $this->memoryService->getHistoryForPrompt($request->user(), $lesson);
             $memoryContext = $this->memoryService->buildPromptContext($memoryHistory, $lesson->id);
 
+            // Checkpoint flow for explore / explain / elaborate
+            if ($this->checkpointService->isCheckpointStage($stage) && in_array($intent, ['start', 'answer'], true)) {
+                return $this->handleCheckpoint($request, $lesson, $stage, $intent);
+            }
+
             $answer = $this->ragQueryService->generateResponse(
                 $request->question,
                 $lesson->id,
@@ -104,7 +112,7 @@ class AIChatController extends Controller
                 $this->memoryService->isEnabled()
             );
 
-            AIChatMessage::create([
+            AiChatMessage::create([
                 'user_id' => $request->user()->id,
                 'lesson_id' => $lesson->id,
                 'stage' => $stage,
@@ -113,7 +121,7 @@ class AIChatController extends Controller
                 'context_source' => 'rag',
                 'retrieval_mode' => 'vector',
             ]);
-                        
+
             return response()->json([
                 'success' => true,
                 'stage' => $stage,
@@ -125,5 +133,75 @@ class AIChatController extends Controller
                 'message' => 'AI service error: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function handleCheckpoint(Request $request, Lesson $lesson, string $stage, string $intent)
+    {
+        $user = $request->user();
+
+        $latestMessage = AiChatMessage::query()
+            ->where('user_id', $user->id)
+            ->where('lesson_id', $lesson->id)
+            ->where('stage', $stage)
+            ->latest('id')
+            ->first();
+
+        if ($intent === 'start') {
+            $payload = $this->checkpointService->generateCheckpointQuestion($lesson, $stage, $user);
+
+            $chat = AiChatMessage::create([
+                'user_id' => $user->id,
+                'lesson_id' => $lesson->id,
+                'stage' => $stage,
+                'question' => '__checkpoint_start__',
+                'answer' => $payload['answer'],
+                'engage_status' => $payload['engage_status'],
+                'context_source' => $payload['context_source'],
+                'retrieval_mode' => $payload['retrieval_mode'],
+                'turn_index' => 1,
+                'parent_message_id' => $latestMessage?->id,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'stage' => $stage,
+                'intent' => 'start',
+                'answer' => $chat->answer,
+                'engage_status' => $chat->engage_status,
+            ]);
+        }
+
+        // intent === 'answer'
+        $payload = $this->checkpointService->evaluateCheckpointAnswer($lesson, $user, $request->question, $stage);
+
+        $chat = AiChatMessage::create([
+            'user_id' => $user->id,
+            'lesson_id' => $lesson->id,
+            'stage' => $stage,
+            'question' => $request->question,
+            'answer' => $payload['answer'],
+            'classification' => $payload['classification'],
+            'confidence' => $payload['confidence'],
+            'feedback_text' => $payload['feedback_text'],
+            'follow_up_question' => $payload['follow_up_question'],
+            'engage_status' => $payload['engage_status'],
+            'completion_reason' => $payload['completion_reason'],
+            'turn_index' => $payload['turn_index'],
+            'context_source' => $payload['context_source'],
+            'retrieval_mode' => $payload['retrieval_mode'],
+            'parent_message_id' => $latestMessage?->id,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'stage' => $stage,
+            'intent' => 'answer',
+            'answer' => $chat->answer,
+            'classification' => $chat->classification,
+            'confidence' => $chat->confidence,
+            'engage_status' => $chat->engage_status,
+            'follow_up_question' => $chat->follow_up_question,
+            'full_answer' => $payload['full_answer'] ?? null,
+        ]);
     }
 }

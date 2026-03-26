@@ -8,6 +8,7 @@ use App\Services\AiPerformanceLogger;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use LLPhant\Embeddings\VectorStores\FileSystem\FileSystemVectorStore;
 use LLPhant\Embeddings\Document;
 
@@ -175,6 +176,59 @@ class RagQueryService
     }
 
     /**
+     * Retrieve context from one or more vector store files.
+     * Each store is queried independently, then snippets are combined.
+     *
+     * @param string[] $vectorStorePaths
+     */
+    public function retrieveContextFromVectorStoresSafe(array $vectorStorePaths, string $query, int $topKPerStore = 2, int $maxContexts = 4): string
+    {
+        $paths = array_values(array_unique(array_filter($vectorStorePaths, fn ($path) => is_string($path) && $path !== '' && File::exists($path))));
+
+        if ($paths === []) {
+            return '';
+        }
+
+        try {
+            $queryDoc = new Document();
+            $queryDoc->content = $query;
+            $embeddedQuery = $this->embeddingGenerator->embedDocument($queryDoc);
+
+            $contexts = [];
+
+            foreach ($paths as $path) {
+                $vectorStore = new FileSystemVectorStore($path);
+                $documents = $vectorStore->similaritySearch($embeddedQuery->embedding, $topKPerStore);
+
+                foreach ($documents as $document) {
+                    $snippet = trim((string) $document->content);
+                    if ($snippet === '') {
+                        continue;
+                    }
+
+                    $contexts[] = $snippet;
+
+                    if (count($contexts) >= $maxContexts) {
+                        break 2;
+                    }
+                }
+            }
+
+            $this->lastChunkCount = count($contexts);
+
+            return trim(implode("\n\n", $contexts));
+        } catch (\Throwable $e) {
+            Log::warning('[RAG Query] Multi-store context retrieval failed', [
+                'error' => $e->getMessage(),
+                'stores' => count($paths),
+                'query_snippet' => Str::limit($query, 100),
+            ]);
+
+            return '';
+        }
+    }
+
+    /**
      * Generic Ollama LLM call for internal and cross-service use.
      *
      * @param array $logContext Optional performance-log metadata (caller, lesson_id, stage, etc.)
@@ -298,7 +352,7 @@ class RagQueryService
             default => 'Focus on accurate, concise instructional support.',
         };
 
-        $studentName = $userName ?: 'the student';
+        $studentName = $userName ? ucfirst(strtolower($userName)) : 'the student';
         $memoryRule = $memoryEnabled
             ? 'Use LESSON_CONTEXT first. You may also use MEMORY_CONTEXT from the same student, including prior lessons, when it clearly helps answer the question.'
             : 'Answer strictly from LESSON_CONTEXT. Ignore any implied memory outside the current lesson.';

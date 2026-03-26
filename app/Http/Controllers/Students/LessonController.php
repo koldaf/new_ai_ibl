@@ -82,6 +82,18 @@ class LessonController extends Controller
             ->get()
             ->keyBy('question_id');
 
+        // Checkpoint completion status for explore / explain / elaborate
+        $checkpointStages = ['explore', 'explain', 'elaborate'];
+        $checkpointStatus = [];
+        foreach ($checkpointStages as $cs) {
+            $checkpointStatus[$cs] = AiChatMessage::query()
+                ->where('user_id', Auth::id())
+                ->where('lesson_id', $lesson->id)
+                ->where('stage', $cs)
+                ->where('engage_status', 'complete')
+                ->exists();
+        }
+
         return view('dashboard.student.lessons.show', compact(
             'lesson',
             'progress',
@@ -97,7 +109,8 @@ class LessonController extends Controller
             'exploreActivities',
             'exploreActivityCompletions',
             'exploreCompletedCount',
-            'allExploreActivitiesCompleted'
+            'allExploreActivitiesCompleted',
+            'checkpointStatus'
         ));
     }
 
@@ -232,6 +245,32 @@ class LessonController extends Controller
             if ($totalActivities > 0 && $completedActivities < $totalActivities) {
                 return response()->json([
                     'error' => 'Complete every Explore activity before marking this stage as complete.',
+                ], 422);
+            }
+
+            $hasExploreCheckpoint = AiChatMessage::query()
+                ->where('user_id', Auth::id())
+                ->where('lesson_id', $lesson->id)
+                ->where('stage', 'explore')
+                ->where('engage_status', 'complete')
+                ->exists();
+            if (!$hasExploreCheckpoint) {
+                return response()->json([
+                    'error' => 'Complete the Explore checkpoint discussion before marking this stage as complete.',
+                ], 422);
+            }
+        }
+
+        if (in_array($stage, ['explain', 'elaborate'])) {
+            $hasCheckpoint = AiChatMessage::query()
+                ->where('user_id', Auth::id())
+                ->where('lesson_id', $lesson->id)
+                ->where('stage', $stage)
+                ->where('engage_status', 'complete')
+                ->exists();
+            if (!$hasCheckpoint) {
+                return response()->json([
+                    'error' => 'Complete the ' . ucfirst($stage) . ' checkpoint discussion before marking this stage as complete.',
                 ], 422);
             }
         }

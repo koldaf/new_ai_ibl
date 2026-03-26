@@ -104,6 +104,7 @@
                             <th>Explore Activity Count</th>
                             <th>Updated</th>
                             <th>Lesson Complete</th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -135,10 +136,16 @@
                                         {{ $row['progress']->completed ? 'Yes' : 'No' }}
                                     </span>
                                 </td>
+                                <td>
+                                    <a href="{{ route('teacher.lessons.student-activity', ['lesson' => $lesson->id, 'student' => $row['user']->id]) }}"
+                                       class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-eye me-1"></i> View Activity
+                                    </a>
+                                </td>
                             </tr>
                         @empty
                         <tr>
-                            <td colspan="6" class="text-center text-muted py-4">No learner records match the selected filters.</td>
+                            <td colspan="8" class="text-center text-muted py-4">No learner records match the selected filters.</td>
                         </tr>
                         @endforelse
                     </tbody>
