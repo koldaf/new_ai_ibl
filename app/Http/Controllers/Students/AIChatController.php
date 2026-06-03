@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Lesson;
 use App\Models\AiChatMessage;
 use App\Services\AiMemoryService;
+use App\Services\BloomTaxonomyClassifier;
 use App\Services\EngageDecisionService;
 use App\Services\RagQueryService;
 use App\Services\StageCheckpointService;
@@ -17,17 +18,20 @@ class AIChatController extends Controller
     protected EngageDecisionService $engageDecisionService;
     protected AiMemoryService $memoryService;
     protected StageCheckpointService $checkpointService;
+    protected BloomTaxonomyClassifier $bloomClassifier;
 
     public function __construct(
         RagQueryService $ragQueryService,
         EngageDecisionService $engageDecisionService,
         AiMemoryService $memoryService,
-        StageCheckpointService $checkpointService
+        StageCheckpointService $checkpointService,
+        BloomTaxonomyClassifier $bloomClassifier
     ) {
         $this->ragQueryService = $ragQueryService;
         $this->engageDecisionService = $engageDecisionService;
         $this->memoryService = $memoryService;
         $this->checkpointService = $checkpointService;
+        $this->bloomClassifier = $bloomClassifier;
     }
 
     public function ask(Request $request, Lesson $lesson)
@@ -54,6 +58,8 @@ class AIChatController extends Controller
                     ? $this->engageDecisionService->generateStartQuestion($lesson, $request->user())
                     : $this->engageDecisionService->assessAnswer($lesson, $request->user(), $request->question);
 
+                $bloom = $this->classifyLearnerQuestion($request->question, $stage, $intent);
+
                 $parentMessage = AiChatMessage::query()
                     ->where('user_id', $request->user()->id)
                     ->where('lesson_id', $lesson->id)
@@ -68,6 +74,8 @@ class AIChatController extends Controller
                     'question' => $request->question,
                     'answer' => $payload['answer'] ?? '',
                     'classification' => $payload['classification'] ?? null,
+                    'bloom_level' => $bloom['bloom_level'],
+                    'bloom_confidence' => $bloom['bloom_confidence'],
                     'confidence' => $payload['confidence'] ?? null,
                     'feedback_text' => $payload['feedback_text'] ?? null,
                     'follow_up_question' => $payload['follow_up_question'] ?? null,
@@ -87,6 +95,8 @@ class AIChatController extends Controller
                     'intent' => $intent,
                     'answer' => $chat->answer,
                     'classification' => $chat->classification,
+                    'bloom_level' => $chat->bloom_level,
+                    'bloom_confidence' => $chat->bloom_confidence,
                     'confidence' => $chat->confidence,
                     'engage_status' => $chat->engage_status,
                     'follow_up_question' => $chat->follow_up_question,
@@ -112,12 +122,16 @@ class AIChatController extends Controller
                 $this->memoryService->isEnabled()
             );
 
+            $bloom = $this->classifyLearnerQuestion($request->question, $stage, $intent);
+
             AiChatMessage::create([
                 'user_id' => $request->user()->id,
                 'lesson_id' => $lesson->id,
                 'stage' => $stage,
                 'question' => $request->question,
                 'answer' => $answer,
+                'bloom_level' => $bloom['bloom_level'],
+                'bloom_confidence' => $bloom['bloom_confidence'],
                 'context_source' => 'rag',
                 'retrieval_mode' => 'vector',
             ]);
@@ -126,6 +140,8 @@ class AIChatController extends Controller
                 'success' => true,
                 'stage' => $stage,
                 'answer' => $answer,
+                'bloom_level' => $bloom['bloom_level'],
+                'bloom_confidence' => $bloom['bloom_confidence'],
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -173,6 +189,7 @@ class AIChatController extends Controller
 
         // intent === 'answer'
         $payload = $this->checkpointService->evaluateCheckpointAnswer($lesson, $user, $request->question, $stage);
+        $bloom = $this->classifyLearnerQuestion($request->question, $stage, $intent);
 
         $chat = AiChatMessage::create([
             'user_id' => $user->id,
@@ -181,6 +198,8 @@ class AIChatController extends Controller
             'question' => $request->question,
             'answer' => $payload['answer'],
             'classification' => $payload['classification'],
+            'bloom_level' => $bloom['bloom_level'],
+            'bloom_confidence' => $bloom['bloom_confidence'],
             'confidence' => $payload['confidence'],
             'feedback_text' => $payload['feedback_text'],
             'follow_up_question' => $payload['follow_up_question'],
@@ -198,10 +217,21 @@ class AIChatController extends Controller
             'intent' => 'answer',
             'answer' => $chat->answer,
             'classification' => $chat->classification,
+            'bloom_level' => $chat->bloom_level,
+            'bloom_confidence' => $chat->bloom_confidence,
             'confidence' => $chat->confidence,
             'engage_status' => $chat->engage_status,
             'follow_up_question' => $chat->follow_up_question,
             'full_answer' => $payload['full_answer'] ?? null,
         ]);
+    }
+
+    private function classifyLearnerQuestion(string $question, string $stage, string $intent): array
+    {
+        if ($intent === 'start') {
+            return ['bloom_level' => null, 'bloom_confidence' => null];
+        }
+
+        return $this->bloomClassifier->classify($question, $stage);
     }
 }

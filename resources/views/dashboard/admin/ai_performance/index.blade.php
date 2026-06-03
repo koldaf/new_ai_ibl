@@ -277,6 +277,76 @@
         </div>
     </div>
 
+    @php
+        $bloomOrder = ['remember', 'understand', 'apply', 'analyze', 'evaluate', 'create'];
+        $stageOrder = ['engage', 'explore', 'explain', 'elaborate', 'evaluate'];
+        $bloomRows = $bloomByStage->groupBy('stage')->map(fn($rows) => $rows->keyBy('bloom_level'));
+    @endphp
+
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-lg-5">
+            <div class="chart-card h-100">
+                <div class="section-title">Bloom Taxonomy Distribution</div>
+                <div class="table-responsive">
+                    <table class="table table-sm perf-table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Level</th>
+                                <th class="text-end">Questions</th>
+                                <th class="text-end">Avg Confidence</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse($bloomStats as $bloom)
+                                <tr>
+                                    <td class="text-capitalize">{{ $bloom->bloom_level }}</td>
+                                    <td class="text-end">{{ number_format($bloom->total_questions) }}</td>
+                                    <td class="text-end">{{ $bloom->avg_confidence ?? '—' }}</td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="3" class="text-center text-muted py-4">
+                                        No Bloom classifications have been recorded yet.
+                                    </td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-lg-7">
+            <div class="chart-card h-100">
+                <div class="section-title">Bloom Levels by Lesson Stage</div>
+                <div class="table-responsive">
+                    <table class="table table-sm perf-table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Stage</th>
+                                @foreach($bloomOrder as $level)
+                                    <th class="text-end text-capitalize">{{ $level }}</th>
+                                @endforeach
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($stageOrder as $stage)
+                                <tr>
+                                    <td class="text-capitalize">{{ $stage }}</td>
+                                    @foreach($bloomOrder as $level)
+                                        @php
+                                            $count = $bloomRows[$stage][$level]->total_questions ?? 0;
+                                        @endphp
+                                        <td class="text-end">{{ $count }}</td>
+                                    @endforeach
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     {{-- ══════════════════════════════════════════════════════════
          DETAIL LOG TABLE
     ══════════════════════════════════════════════════════════ --}}

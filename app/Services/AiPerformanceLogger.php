@@ -72,6 +72,8 @@ class AiPerformanceLogger
                 'lesson_id'        => $context['lesson_id']     ?? null,
                 'user_id'          => $context['user_id']       ?? null,
                 'stage'            => $context['stage']         ?? null,
+                'bloom_level'      => $context['bloom_level']   ?? null,
+                'bloom_confidence' => $context['bloom_confidence'] ?? null,
                 'model_name'       => $modelName,
                 'question_snippet' => $snippet,
                 'response_time_ms' => (int) round($wallClockMs),

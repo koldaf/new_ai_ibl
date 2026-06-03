@@ -11,6 +11,8 @@ class AiPerformanceLog extends Model
         'lesson_id',
         'user_id',
         'stage',
+        'bloom_level',
+        'bloom_confidence',
         'model_name',
         'question_snippet',
         'response_time_ms',
@@ -25,6 +27,7 @@ class AiPerformanceLog extends Model
     ];
 
     protected $casts = [
+        'bloom_confidence'  => 'float',
         'ttft_ms'           => 'float',
         'total_duration_ms' => 'float',
         'load_duration_ms'  => 'float',

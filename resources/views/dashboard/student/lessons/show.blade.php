@@ -392,8 +392,8 @@
 </div>
 
 <!-- Floating AI Chat Button -->
-<div id="ai-chat-widget" style="position: fixed; top: 80%; left: 90%; z-index: 1000;">
-    <div style="width: 300px; position: absolute; top: -480px; left: -220px; overflow-x:hidden; display:none" id="ai-chat-container" class="card alert-danger border-2 rounded">
+<div id="ai-chat-widget" class="denzy-widget">
+    <div id="ai-chat-container" class="card alert-danger border-2 rounded denzy-widget-panel" aria-hidden="true">
         <div class="bg-dark text-light text-center h6 m-0 p-3 border-bottom">
             <i class="fas fa-robot fa-2x me-3"></i>
             <strong>Denzy </strong>
@@ -412,38 +412,11 @@
             </div>
     </div>
     
-    <button id="ai-chat-button" class="btn btn-dark rounded-circle" style="width: 60px; height: 60px;">
+    <button id="ai-chat-button" class="btn btn-dark rounded-circle denzy-widget-button" aria-expanded="false" aria-controls="ai-chat-container">
         <i class="fas fa-robot"></i>
     </button>
 </div>
 
-<!-- Floating AI Chat Button ->
-<button id="ai-chat-button" class="btn btn-primary rounded-circle position-fixed bottom-0 end-0 m-4" style="width: 60px; height: 60px; z-index: 1000;">
-    <i class="fas fa-robot"></i>
-</button>
-
- AI Chat Modal ->
-<div class="modal fade" id="aiChatModal" tabindex="-1" aria-labelledby="aiChatModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="aiChatModalLabel">AI Tutor (Powered by OLLAMA)</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body" style="height: 400px; overflow-y: auto;" id="chat-messages">
-                <div class="alert alert-info">Ask me anything about this lesson!</div>
-            </div>
-            <div class="modal-footer">
-                <form id="chat-form" class="w-100">
-                    <div class="input-group">
-                        <input type="text" id="chat-input" class="form-control" placeholder="Type your question..." required>
-                        <button class="btn btn-primary" type="submit">Send</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-</div-->
 @endsection
 
 @push('scripts')
@@ -470,12 +443,6 @@ $(document).ready(function() {
     }
 
     function updateDenzyVisibility() {
-        if (activeStage() === 'engage') {
-            $('#ai-chat-container').hide();
-            $('#ai-chat-widget').hide();
-            return;
-        }
-
         $('#ai-chat-widget').show();
     }
 
@@ -708,13 +675,15 @@ $(document).ready(function() {
 
     // AI Chat
     $('#ai-chat-button').on('click', function() {
-       // console.log('clickingS');
-        var container = $('#ai-chat-container');
-        container.toggle('slow');
-
+        var widget = $('#ai-chat-widget');
+        var isOpen = widget.toggleClass('is-open').hasClass('is-open');
+        $('#ai-chat-container').attr('aria-hidden', !isOpen);
+        $('#ai-chat-button').attr('aria-expanded', isOpen);
     });
     $('#ai-chat-close').on('click', function() {
-        $('#ai-chat-container').hide('slow');
+        $('#ai-chat-widget').removeClass('is-open');
+        $('#ai-chat-container').attr('aria-hidden', true);
+        $('#ai-chat-button').attr('aria-expanded', false);
     });
 
     $('#engage-chat-form').on('submit', function(e) {

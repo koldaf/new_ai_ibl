@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\AiChatMessage;
 use App\Models\AiPerformanceLog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -43,6 +44,33 @@ class AiPerformanceController extends Controller
         $logs = AiPerformanceLog::latest()
             ->paginate(20, ['*'], 'page', $request->get('page', 1));
 
+        $bloomStats = AiChatMessage::select(
+            'bloom_level',
+            DB::raw('COUNT(*) as total_questions'),
+            DB::raw('ROUND(AVG(bloom_confidence), 2) as avg_confidence')
+        )
+        ->whereNotNull('bloom_level')
+        ->groupBy('bloom_level')
+        ->orderByRaw("CASE bloom_level
+            WHEN 'remember' THEN 1
+            WHEN 'understand' THEN 2
+            WHEN 'apply' THEN 3
+            WHEN 'analyze' THEN 4
+            WHEN 'evaluate' THEN 5
+            WHEN 'create' THEN 6
+            ELSE 7 END")
+        ->get();
+
+        $bloomByStage = AiChatMessage::select(
+            'stage',
+            'bloom_level',
+            DB::raw('COUNT(*) as total_questions')
+        )
+        ->whereNotNull('bloom_level')
+        ->groupBy('stage', 'bloom_level')
+        ->orderBy('stage')
+        ->get();
+
         return view('dashboard.admin.ai_performance.index', [
             'todayCount'  => $todayCount,
             'avgResponse' => round($avgResponse ?? 0),
@@ -50,6 +78,8 @@ class AiPerformanceController extends Controller
             'avgTtft'     => round($avgTtft ?? 0),
             'callerStats' => $callerStats,
             'logs'        => $logs,
+            'bloomStats'  => $bloomStats,
+            'bloomByStage' => $bloomByStage,
         ]);
     }
 
