@@ -142,6 +142,14 @@ Route::prefix('student')
             [StudentLessonController::class, 'completeActivity'])
             ->name('lessons.stages.activities.complete');
 
+        Route::post('/lessons/{lesson}/stages/{stage}/analytics/touch',
+            [StudentLessonController::class, 'touchStage'])
+            ->name('lessons.stages.analytics.touch');
+
+        Route::post('/lessons/{lesson}/stages/{stage}/reflection',
+            [StudentLessonController::class, 'saveReflection'])
+            ->name('lessons.stages.reflection.save');
+
         // Quiz — own controller, own namespace
         Route::post('/lessons/{lesson}/quiz',
             [QuizController::class, 'submit'])
@@ -172,4 +180,7 @@ Route::prefix('teacher')
 
         Route::get('/lessons/{lesson}/students/{student}', [TeacherDashboardController::class, 'showStudentActivity'])
             ->name('lessons.student-activity');
+
+        Route::post('/lessons/{lesson}/students/{student}/stages/{stage}/reflection-score', [TeacherDashboardController::class, 'updateReflectionScore'])
+            ->name('lessons.student-reflection-score.update');
     });

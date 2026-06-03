@@ -8,6 +8,7 @@ use App\Models\AiChatMessage;
 use App\Services\AiMemoryService;
 use App\Services\BloomTaxonomyClassifier;
 use App\Services\EngageDecisionService;
+use App\Services\InquiryPhaseAnalyticsService;
 use App\Services\RagQueryService;
 use App\Services\StageCheckpointService;
 use Illuminate\Http\Request;
@@ -19,19 +20,22 @@ class AIChatController extends Controller
     protected AiMemoryService $memoryService;
     protected StageCheckpointService $checkpointService;
     protected BloomTaxonomyClassifier $bloomClassifier;
+    protected InquiryPhaseAnalyticsService $inquiryAnalytics;
 
     public function __construct(
         RagQueryService $ragQueryService,
         EngageDecisionService $engageDecisionService,
         AiMemoryService $memoryService,
         StageCheckpointService $checkpointService,
-        BloomTaxonomyClassifier $bloomClassifier
+        BloomTaxonomyClassifier $bloomClassifier,
+        InquiryPhaseAnalyticsService $inquiryAnalytics
     ) {
         $this->ragQueryService = $ragQueryService;
         $this->engageDecisionService = $engageDecisionService;
         $this->memoryService = $memoryService;
         $this->checkpointService = $checkpointService;
         $this->bloomClassifier = $bloomClassifier;
+        $this->inquiryAnalytics = $inquiryAnalytics;
     }
 
     public function ask(Request $request, Lesson $lesson)
@@ -44,8 +48,11 @@ class AIChatController extends Controller
 
         $stage = $request->input('stage', 'engage');
         $intent = $request->input('intent', 'ask');
+        $user = $request->user();
 
         try {
+            $this->inquiryAnalytics->touchStage($user, $lesson, $stage);
+
             if ($stage === 'engage') {
                 if (($lesson->getStageContent('engage')?->activity_mode ?? 'chat') !== 'chat') {
                     return response()->json([
@@ -55,20 +62,20 @@ class AIChatController extends Controller
                 }
 
                 $payload = $intent === 'start'
-                    ? $this->engageDecisionService->generateStartQuestion($lesson, $request->user())
-                    : $this->engageDecisionService->assessAnswer($lesson, $request->user(), $request->question);
+                    ? $this->engageDecisionService->generateStartQuestion($lesson, $user)
+                    : $this->engageDecisionService->assessAnswer($lesson, $user, $request->question);
 
                 $bloom = $this->classifyLearnerQuestion($request->question, $stage, $intent);
 
                 $parentMessage = AiChatMessage::query()
-                    ->where('user_id', $request->user()->id)
+                    ->where('user_id', $user->id)
                     ->where('lesson_id', $lesson->id)
                     ->where('stage', 'engage')
                     ->latest('id')
                     ->first();
 
                 $chat = AiChatMessage::create([
-                    'user_id' => $request->user()->id,
+                    'user_id' => $user->id,
                     'lesson_id' => $lesson->id,
                     'stage' => 'engage',
                     'question' => $request->question,
@@ -89,6 +96,11 @@ class AIChatController extends Controller
                     'parent_message_id' => $parentMessage?->id,
                 ]);
 
+                if ($intent !== 'start' && filled($request->question)) {
+                    $evidenceCount = $this->inquiryAnalytics->deriveEvidenceCountFromResponse((string) ($payload['answer'] ?? ''));
+                    $this->inquiryAnalytics->recordQuestion($user, $lesson, $stage, $evidenceCount);
+                }
+
                 return response()->json([
                     'success' => true,
                     'stage' => 'engage',
@@ -104,7 +116,7 @@ class AIChatController extends Controller
                 ]);
             }
 
-            $memoryHistory = $this->memoryService->getHistoryForPrompt($request->user(), $lesson);
+            $memoryHistory = $this->memoryService->getHistoryForPrompt($user, $lesson);
             $memoryContext = $this->memoryService->buildPromptContext($memoryHistory, $lesson->id);
 
             // Checkpoint flow for explore / explain / elaborate
@@ -116,7 +128,7 @@ class AIChatController extends Controller
                 $request->question,
                 $lesson->id,
                 $stage,
-                $request->user()->name,
+                $user->name,
                 5,
                 $memoryContext,
                 $this->memoryService->isEnabled()
@@ -125,7 +137,7 @@ class AIChatController extends Controller
             $bloom = $this->classifyLearnerQuestion($request->question, $stage, $intent);
 
             AiChatMessage::create([
-                'user_id' => $request->user()->id,
+                'user_id' => $user->id,
                 'lesson_id' => $lesson->id,
                 'stage' => $stage,
                 'question' => $request->question,
@@ -135,6 +147,11 @@ class AIChatController extends Controller
                 'context_source' => 'rag',
                 'retrieval_mode' => 'vector',
             ]);
+
+            if (in_array($intent, ['ask', 'answer'], true) && filled($request->question)) {
+                $evidenceCount = $this->inquiryAnalytics->deriveEvidenceCountFromResponse($answer);
+                $this->inquiryAnalytics->recordQuestion($user, $lesson, $stage, $evidenceCount);
+            }
 
             return response()->json([
                 'success' => true,
@@ -210,6 +227,9 @@ class AIChatController extends Controller
             'retrieval_mode' => $payload['retrieval_mode'],
             'parent_message_id' => $latestMessage?->id,
         ]);
+
+        $evidenceCount = $this->inquiryAnalytics->deriveEvidenceCountFromResponse((string) ($payload['answer'] ?? ''));
+        $this->inquiryAnalytics->recordQuestion($user, $lesson, $stage, $evidenceCount);
 
         return response()->json([
             'success' => true,

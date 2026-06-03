@@ -62,6 +62,11 @@ class User extends Authenticatable
         return $this->hasMany(LessonActivityCompletion::class);
     }
 
+    public function lessonPhaseAnalytics()
+    {
+        return $this->hasMany(LessonPhaseAnalytic::class);
+    }
+
     public function ownedLessons(): HasMany
     {
         return $this->hasMany(Lesson::class, 'teacher_id');

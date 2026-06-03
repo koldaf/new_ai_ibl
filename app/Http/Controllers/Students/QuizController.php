@@ -7,11 +7,16 @@ use App\Models\Lesson;
 use App\Models\LessonProgress;
 use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
+use App\Services\InquiryPhaseAnalyticsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class QuizController extends Controller
 {
+    public function __construct(private InquiryPhaseAnalyticsService $inquiryAnalytics)
+    {
+    }
+
     public function submit(Request $request, Lesson $lesson)
     {
         $request->validate([
@@ -77,6 +82,8 @@ class QuizController extends Controller
             }
 
             $progress->save();
+
+            $this->inquiryAnalytics->markStageComplete($request->user(), $lesson, 'evaluate');
         }
 
         $percentage = $totalQuestions > 0 ? round(($correctCount / $totalQuestions) * 100) : 0;

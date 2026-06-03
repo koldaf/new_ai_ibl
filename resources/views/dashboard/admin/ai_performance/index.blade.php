@@ -432,9 +432,6 @@
 @endsection
 
 @push('scripts')
-{{-- Chart.js --}}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-
 <script>
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const isDark = () => document.documentElement.getAttribute('data-bs-theme') === 'dark';
@@ -452,7 +449,11 @@ function buildCharts(data) {
 
     // ── Timeline chart (dual y-axis) ──────────────────────────────────────────
     if (timelineChart) timelineChart.destroy();
-    timelineChart = new Chart(document.getElementById('timelineChart'), {
+    if (typeof window.Chart === 'undefined') {
+        return;
+    }
+
+    timelineChart = new window.Chart(document.getElementById('timelineChart'), {
         data: {
             labels: hourlyLabels,
             datasets: [
@@ -518,7 +519,7 @@ function buildCharts(data) {
     const callerBgColors = data.tps_by_caller.map(r => callerColors[r.caller] ?? '#94A3B8');
 
     if (tpsBarChart) tpsBarChart.destroy();
-    tpsBarChart = new Chart(document.getElementById('tpsBarChart'), {
+    tpsBarChart = new window.Chart(document.getElementById('tpsBarChart'), {
         type: 'bar',
         data: {
             labels: callerLabels,

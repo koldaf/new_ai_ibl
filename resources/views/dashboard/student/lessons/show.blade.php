@@ -281,6 +281,61 @@
                 </div>
             @endif
 
+            @php
+                $stageAnalytic = $phaseAnalyticsByStage->get($stage);
+                $reflectionText = old('reflection_text', $stageAnalytic?->reflection_text ?? '');
+            @endphp
+            <div class="card mb-4 shadow-sm border-0">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold">Inquiry Reflection ({{ ucfirst($stage) }})</span>
+                    <span class="badge bg-secondary" id="reflection-quality-badge-{{ $stage }}">
+                        Quality: {{ is_null($stageAnalytic?->reflection_quality_final) ? 'Not scored' : $stageAnalytic->reflection_quality_final . '/100' }}
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <div class="small text-muted">Time spent</div>
+                            <div class="fw-semibold" id="stage-time-{{ $stage }}">{{ round(((int) ($stageAnalytic?->time_spent_seconds ?? 0)) / 60, 1) }} min</div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="small text-muted">Questions generated</div>
+                            <div class="fw-semibold">{{ (int) ($stageAnalytic?->questions_generated ?? 0) }}</div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="small text-muted">Evidence sources consulted</div>
+                            <div class="fw-semibold">{{ (int) ($stageAnalytic?->evidence_sources_consulted ?? 0) }}</div>
+                        </div>
+                    </div>
+
+                    <div class="mb-2">
+                        <label for="reflection-input-{{ $stage }}" class="form-label">What did you learn in this phase?</label>
+                        <textarea
+                            id="reflection-input-{{ $stage }}"
+                            class="form-control reflection-input"
+                            data-stage="{{ $stage }}"
+                            rows="4"
+                            placeholder="Write a short reflection, mention your evidence and what you would improve next time..."
+                        >{{ $reflectionText }}</textarea>
+                    </div>
+                    <button
+                        type="button"
+                        class="btn btn-outline-primary reflection-save-button"
+                        data-stage="{{ $stage }}"
+                        {{ $progress->{$stage.'_completed'} ? 'disabled' : '' }}
+                    >
+                        Save Reflection
+                    </button>
+                    <div class="small text-muted mt-2" id="reflection-save-status-{{ $stage }}">
+                        @if($stageAnalytic?->updated_at)
+                            Last updated {{ $stageAnalytic->updated_at->diffForHumans() }}
+                        @else
+                            Not saved yet
+                        @endif
+                    </div>
+                </div>
+            </div>
+
             <!-- Mark as Complete Button (except evaluate if not done yet) -->
             @if(!$progress->{$stage.'_completed'} && $stage != 'evaluate')
                 @if($stage === 'engage')
@@ -444,6 +499,22 @@ $(document).ready(function() {
 
     function updateDenzyVisibility() {
         $('#ai-chat-widget').show();
+    }
+
+    function touchStageAnalytics(stage) {
+        $.ajax({
+            url: '{{ route("student.lessons.stages.analytics.touch", ["lesson" => $lesson->id, "stage" => "_stage_"]) }}'.replace('_stage_', stage),
+            method: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}'
+            },
+            success: function(response) {
+                if (response && typeof response.time_spent_seconds !== 'undefined') {
+                    var timeMinutes = (parseInt(response.time_spent_seconds, 10) / 60).toFixed(1);
+                    $('#stage-time-' + stage).text(timeMinutes + ' min');
+                }
+            }
+        });
     }
 
     function updateEngageCompletionState(canComplete) {
@@ -644,6 +715,43 @@ $(document).ready(function() {
             error: function(xhr) {
                 checkbox.prop('checked', !completed);
                 alert((xhr.responseJSON && xhr.responseJSON.error) ? xhr.responseJSON.error : 'Unable to update Explore activity.');
+            }
+        });
+    });
+
+    $('.reflection-save-button').on('click', function() {
+        var button = $(this);
+        var stage = button.data('stage');
+        var text = $('#reflection-input-' + stage).val();
+
+        if (!text || text.trim().length < 10) {
+            alert('Please write at least 10 characters before saving your reflection.');
+            return;
+        }
+
+        button.prop('disabled', true).text('Saving...');
+
+        $.ajax({
+            url: '{{ route("student.lessons.stages.reflection.save", ["lesson" => $lesson->id, "stage" => "_stage_"]) }}'.replace('_stage_', stage),
+            method: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}',
+                reflection_text: text
+            },
+            success: function(response) {
+                $('#reflection-save-status-' + stage).text('Saved just now');
+                if (response && response.reflection_quality_final !== null) {
+                    $('#reflection-quality-badge-' + stage).text('Quality: ' + response.reflection_quality_final + '/100');
+                }
+            },
+            error: function(xhr) {
+                var message = (xhr.responseJSON && (xhr.responseJSON.message || xhr.responseJSON.error))
+                    ? (xhr.responseJSON.message || xhr.responseJSON.error)
+                    : 'Unable to save reflection.';
+                alert(message);
+            },
+            complete: function() {
+                button.prop('disabled', false).text('Save Reflection');
             }
         });
     });
@@ -958,6 +1066,7 @@ $(document).ready(function() {
         updateDenzyVisibility();
 
         var tab = activeStage();
+        touchStageAnalytics(tab);
 
         if (engageMode === 'chat' && tab === 'engage' && !engageStarted) {
             requestEngageStart();
@@ -969,6 +1078,7 @@ $(document).ready(function() {
     });
 
     updateDenzyVisibility();
+    touchStageAnalytics(activeStage());
     updateEngageCompletionState({{ $canMarkEngageComplete ? 'true' : 'false' }});
     updateExploreCompletionState({{ $exploreCompletedCount }}, {{ $exploreActivities->count() }});
     scrollToBottom('#engage-chat-messages');

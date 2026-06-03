@@ -44,6 +44,118 @@
     </div>
 
     <div class="card mb-4">
+        <div class="card-header">Bloom Question Analytics (Current Lesson Filters)</div>
+        <div class="card-body">
+            @php
+                $totalBloomQuestions = $lessonBloomStats->sum('count');
+            @endphp
+            @if($totalBloomQuestions === 0)
+                <p class="text-muted mb-0">No Bloom-classified learner questions for the selected filters.</p>
+            @else
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                    <div class="small text-muted">Total Bloom-classified learner questions: {{ $totalBloomQuestions }}</div>
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Bloom view mode">
+                        <button type="button" class="btn btn-primary" id="lesson-bloom-toggle-chart">Chart</button>
+                        <button type="button" class="btn btn-outline-primary" id="lesson-bloom-toggle-table">Table</button>
+                    </div>
+                </div>
+
+                <div id="lesson-bloom-chart-wrap" style="height: 320px;">
+                    <canvas id="lessonBloomClusteredChart"></canvas>
+                </div>
+
+                <div id="lesson-bloom-table-wrap" class="table-responsive d-none">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Bloom Level</th>
+                                <th class="text-end">Question Count</th>
+                                <th class="text-end">Avg Confidence</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($lessonBloomStats as $stat)
+                                <tr>
+                                    <td>{{ ucfirst($stat['level']) }}</td>
+                                    <td class="text-end">{{ $stat['count'] }}</td>
+                                    <td class="text-end">
+                                        @if(!is_null($stat['avg_confidence']))
+                                            {{ (int) round($stat['avg_confidence'] * 100) }}%
+                                        @else
+                                            —
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">Inquiry Phase Analytics (Current Lesson Filters)</div>
+        <div class="card-body">
+            @php
+                $phaseOrder = ['engage', 'explore', 'explain', 'elaborate', 'evaluate'];
+                $hasPhaseAnalytics = collect($phaseOrder)->contains(function ($stage) use ($phaseAnalyticsByStage) {
+                    $row = $phaseAnalyticsByStage->get($stage);
+                    return $row && (
+                        (float) ($row['avg_time_minutes'] ?? 0) > 0
+                        || (float) ($row['avg_questions'] ?? 0) > 0
+                        || (float) ($row['avg_evidence'] ?? 0) > 0
+                        || (float) ($row['avg_reflection_quality'] ?? 0) > 0
+                    );
+                });
+            @endphp
+
+            @if(!$hasPhaseAnalytics)
+                <p class="text-muted mb-0">No inquiry phase analytics captured for the selected learners yet.</p>
+            @else
+                <div class="d-flex justify-content-end mb-3">
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Inquiry phase view mode">
+                        <button type="button" class="btn btn-primary" id="lesson-inquiry-toggle-chart">Chart</button>
+                        <button type="button" class="btn btn-outline-primary" id="lesson-inquiry-toggle-table">Table</button>
+                    </div>
+                </div>
+
+                <div id="lesson-inquiry-chart-wrap" style="height: 320px;">
+                    <canvas id="lessonInquiryClusteredChart"></canvas>
+                </div>
+
+                <div id="lesson-inquiry-table-wrap" class="table-responsive d-none">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Stage</th>
+                                <th class="text-end">Avg Time (min)</th>
+                                <th class="text-end">Avg Questions</th>
+                                <th class="text-end">Avg Evidence</th>
+                                <th class="text-end">Avg Reflection Quality</th>
+                                <th class="text-end">Reflections Submitted</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($phaseOrder as $stage)
+                                @php $row = $phaseAnalyticsByStage->get($stage, []); @endphp
+                                <tr>
+                                    <td>{{ ucfirst($stage) }}</td>
+                                    <td class="text-end">{{ number_format((float) ($row['avg_time_minutes'] ?? 0), 1) }}</td>
+                                    <td class="text-end">{{ number_format((float) ($row['avg_questions'] ?? 0), 1) }}</td>
+                                    <td class="text-end">{{ number_format((float) ($row['avg_evidence'] ?? 0), 1) }}</td>
+                                    <td class="text-end">{{ number_format((float) ($row['avg_reflection_quality'] ?? 0), 1) }}</td>
+                                    <td class="text-end">{{ (int) ($row['reflection_count'] ?? 0) }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        </div>
+    </div>
+
+    <div class="card mb-4">
         <div class="card-header">Explore Activity Checklist</div>
         <div class="card-body">
             @if($exploreActivities->isEmpty())
@@ -102,6 +214,8 @@
                             <th>Overall Progress</th>
                             <th>Stage Status</th>
                             <th>Explore Activity Count</th>
+                            <th>Bloom Profile</th>
+                            <th>Inquiry Avg</th>
                             <th>Updated</th>
                             <th>Lesson Complete</th>
                             <th></th>
@@ -130,6 +244,28 @@
                                 <td>
                                     {{ $row['explore_completed_count'] }} / {{ $row['explore_total_count'] }}
                                 </td>
+                                <td style="min-width: 220px;">
+                                    @if(($row['bloom_profile']['total'] ?? 0) > 0)
+                                        <div class="small fw-semibold mb-1">
+                                            Dominant: {{ ucfirst($row['bloom_profile']['dominant_level']) }}
+                                        </div>
+                                        <div class="d-flex flex-wrap gap-1">
+                                            @foreach($row['bloom_profile']['count_by_level'] as $level => $count)
+                                                @if($count > 0)
+                                                    <span class="badge text-bg-light border">{{ ucfirst($level) }} {{ $count }}</span>
+                                                @endif
+                                            @endforeach
+                                        </div>
+                                    @else
+                                        <span class="text-muted small">No Bloom data yet</span>
+                                    @endif
+                                </td>
+                                <td class="small" style="min-width: 180px;">
+                                    <div>Time: {{ number_format((float) ($row['inquiry_profile']['averages']['time_minutes'] ?? 0), 1) }}m</div>
+                                    <div>Q: {{ number_format((float) ($row['inquiry_profile']['averages']['questions_generated'] ?? 0), 1) }}</div>
+                                    <div>Evidence: {{ number_format((float) ($row['inquiry_profile']['averages']['evidence_sources_consulted'] ?? 0), 1) }}</div>
+                                    <div>Reflection: {{ number_format((float) ($row['inquiry_profile']['averages']['reflection_quality_final'] ?? 0), 1) }}</div>
+                                </td>
                                 <td class="text-muted small">{{ optional($row['progress']->updated_at)->diffForHumans() }}</td>
                                 <td>
                                     <span class="badge {{ $row['progress']->completed ? 'text-bg-success' : 'text-bg-warning' }}">
@@ -145,7 +281,7 @@
                             </tr>
                         @empty
                         <tr>
-                            <td colspan="8" class="text-center text-muted py-4">No learner records match the selected filters.</td>
+                            <td colspan="10" class="text-center text-muted py-4">No learner records match the selected filters.</td>
                         </tr>
                         @endforelse
                     </tbody>
@@ -160,3 +296,214 @@
     </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const chartWrap = document.getElementById('lesson-bloom-chart-wrap');
+    const tableWrap = document.getElementById('lesson-bloom-table-wrap');
+    const chartBtn = document.getElementById('lesson-bloom-toggle-chart');
+    const tableBtn = document.getElementById('lesson-bloom-toggle-table');
+
+    function activateLessonBloomView(mode) {
+        if (!chartWrap || !tableWrap || !chartBtn || !tableBtn) {
+            return;
+        }
+
+        const chartMode = mode === 'chart';
+        chartWrap.classList.toggle('d-none', !chartMode);
+        tableWrap.classList.toggle('d-none', chartMode);
+        chartBtn.classList.toggle('btn-primary', chartMode);
+        chartBtn.classList.toggle('btn-outline-primary', !chartMode);
+        tableBtn.classList.toggle('btn-primary', !chartMode);
+        tableBtn.classList.toggle('btn-outline-primary', chartMode);
+    }
+
+    chartBtn?.addEventListener('click', function () {
+        activateLessonBloomView('chart');
+    });
+
+    tableBtn?.addEventListener('click', function () {
+        activateLessonBloomView('table');
+    });
+
+    activateLessonBloomView('chart');
+
+    const inquiryChartWrap = document.getElementById('lesson-inquiry-chart-wrap');
+    const inquiryTableWrap = document.getElementById('lesson-inquiry-table-wrap');
+    const inquiryChartBtn = document.getElementById('lesson-inquiry-toggle-chart');
+    const inquiryTableBtn = document.getElementById('lesson-inquiry-toggle-table');
+
+    function activateLessonInquiryView(mode) {
+        if (!inquiryChartWrap || !inquiryTableWrap || !inquiryChartBtn || !inquiryTableBtn) {
+            return;
+        }
+
+        const chartMode = mode === 'chart';
+        inquiryChartWrap.classList.toggle('d-none', !chartMode);
+        inquiryTableWrap.classList.toggle('d-none', chartMode);
+        inquiryChartBtn.classList.toggle('btn-primary', chartMode);
+        inquiryChartBtn.classList.toggle('btn-outline-primary', !chartMode);
+        inquiryTableBtn.classList.toggle('btn-primary', !chartMode);
+        inquiryTableBtn.classList.toggle('btn-outline-primary', chartMode);
+    }
+
+    inquiryChartBtn?.addEventListener('click', function () {
+        activateLessonInquiryView('chart');
+    });
+
+    inquiryTableBtn?.addEventListener('click', function () {
+        activateLessonInquiryView('table');
+    });
+
+    activateLessonInquiryView('chart');
+
+    const chartEl = document.getElementById('lessonBloomClusteredChart');
+
+    if (chartEl && typeof window.Chart !== 'undefined') {
+        const labels = ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'];
+        const stageOrder = ['engage', 'explore', 'explain', 'elaborate', 'evaluate'];
+        const stageLabel = {
+            engage: 'Engage',
+            explore: 'Explore',
+            explain: 'Explain',
+            elaborate: 'Elaborate',
+            evaluate: 'Evaluate'
+        };
+        const stageColor = {
+            engage: '#0d6efd',
+            explore: '#198754',
+            explain: '#fd7e14',
+            elaborate: '#6f42c1',
+            evaluate: '#dc3545'
+        };
+
+        const bloomByStage = @json($lessonBloomByStage);
+
+        const datasets = stageOrder.map(function (stage) {
+            const source = bloomByStage[stage] || {};
+
+            return {
+                label: stageLabel[stage],
+                data: [
+                    source.remember || 0,
+                    source.understand || 0,
+                    source.apply || 0,
+                    source.analyze || 0,
+                    source.evaluate || 0,
+                    source.create || 0,
+                ],
+                backgroundColor: stageColor[stage],
+                borderRadius: 4,
+                maxBarThickness: 28,
+            };
+        });
+
+        new window.Chart(chartEl, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: datasets,
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            precision: 0
+                        },
+                        title: {
+                            display: true,
+                            text: 'Question Count'
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    const inquiryChartEl = document.getElementById('lessonInquiryClusteredChart');
+    const inquiryByStage = @json($phaseAnalyticsByStage);
+
+    if (!inquiryChartEl || typeof window.Chart === 'undefined') {
+        return;
+    }
+
+    const inquiryLabels = ['Engage', 'Explore', 'Explain', 'Elaborate', 'Evaluate'];
+    const stageOrderForInquiry = ['engage', 'explore', 'explain', 'elaborate', 'evaluate'];
+
+    new window.Chart(inquiryChartEl, {
+        type: 'bar',
+        data: {
+            labels: inquiryLabels,
+            datasets: [
+                {
+                    label: 'Avg Time (min)',
+                    data: stageOrderForInquiry.map(function (stage) {
+                        return (inquiryByStage[stage] && inquiryByStage[stage].avg_time_minutes) || 0;
+                    }),
+                    backgroundColor: '#0d6efd',
+                    borderRadius: 4,
+                    maxBarThickness: 26,
+                },
+                {
+                    label: 'Avg Questions',
+                    data: stageOrderForInquiry.map(function (stage) {
+                        return (inquiryByStage[stage] && inquiryByStage[stage].avg_questions) || 0;
+                    }),
+                    backgroundColor: '#198754',
+                    borderRadius: 4,
+                    maxBarThickness: 26,
+                },
+                {
+                    label: 'Avg Evidence',
+                    data: stageOrderForInquiry.map(function (stage) {
+                        return (inquiryByStage[stage] && inquiryByStage[stage].avg_evidence) || 0;
+                    }),
+                    backgroundColor: '#fd7e14',
+                    borderRadius: 4,
+                    maxBarThickness: 26,
+                },
+                {
+                    label: 'Avg Reflection Quality',
+                    data: stageOrderForInquiry.map(function (stage) {
+                        return (inquiryByStage[stage] && inquiryByStage[stage].avg_reflection_quality) || 0;
+                    }),
+                    backgroundColor: '#dc3545',
+                    borderRadius: 4,
+                    maxBarThickness: 26,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0
+                    },
+                    title: {
+                        display: true,
+                        text: 'Average Value'
+                    }
+                }
+            }
+        }
+    });
+});
+</script>
+@endpush

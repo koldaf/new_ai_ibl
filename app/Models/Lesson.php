@@ -32,6 +32,11 @@ class Lesson extends Model
         return $this->hasMany(LessonActivityCompletion::class);
     }
 
+    public function phaseAnalytics()
+    {
+        return $this->hasMany(LessonPhaseAnalytic::class);
+    }
+
     /**
      * Get content for a specific stage.
      */

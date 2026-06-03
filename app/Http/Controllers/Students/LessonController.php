@@ -7,14 +7,22 @@ use App\Models\AiChatMessage;
 use App\Models\EngageMcqAttempt;
 use App\Models\Lesson;
 use App\Models\LessonActivityCompletion;
+use App\Models\LessonPhaseAnalytic;
 use App\Models\LessonProgress;
 use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
+use App\Services\InquiryPhaseAnalyticsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class LessonController extends Controller
 {
+    private const STAGES = ['engage', 'explore', 'explain', 'elaborate', 'evaluate'];
+
+    public function __construct(private InquiryPhaseAnalyticsService $inquiryAnalytics)
+    {
+    }
+
     public function index()
     {
         $lessons = Lesson::with(['progress' => function ($q) {
@@ -26,14 +34,18 @@ class LessonController extends Controller
 
     public function show(Lesson $lesson)
     {
+        $user = Auth::user();
+
         // Get or create progress for this user and lesson
         $progress = LessonProgress::firstOrCreate([
-            'user_id' => Auth::id(),
+            'user_id' => $user->id,
             'lesson_id' => $lesson->id,
         ]);
 
+        $this->inquiryAnalytics->touchStage($user, $lesson, 'engage');
+
         // Load stage contents and media for each stage
-        $stages = ['engage', 'explore', 'explain', 'elaborate', 'evaluate'];
+        $stages = self::STAGES;
         $stageData = [];
         foreach ($stages as $stage) {
             $stageData[$stage] = [
@@ -43,7 +55,7 @@ class LessonController extends Controller
         }
 
         $engageMessages = AiChatMessage::query()
-            ->where('user_id', Auth::id())
+            ->where('user_id', $user->id)
             ->where('lesson_id', $lesson->id)
             ->where('stage', 'engage')
             ->orderBy('id')
@@ -87,12 +99,18 @@ class LessonController extends Controller
         $checkpointStatus = [];
         foreach ($checkpointStages as $cs) {
             $checkpointStatus[$cs] = AiChatMessage::query()
-                ->where('user_id', Auth::id())
+                ->where('user_id', $user->id)
                 ->where('lesson_id', $lesson->id)
                 ->where('stage', $cs)
                 ->where('engage_status', 'complete')
                 ->exists();
         }
+
+        $phaseAnalyticsByStage = LessonPhaseAnalytic::query()
+            ->where('user_id', $user->id)
+            ->where('lesson_id', $lesson->id)
+            ->get()
+            ->keyBy('stage');
 
         return view('dashboard.student.lessons.show', compact(
             'lesson',
@@ -110,8 +128,50 @@ class LessonController extends Controller
             'exploreActivityCompletions',
             'exploreCompletedCount',
             'allExploreActivitiesCompleted',
-            'checkpointStatus'
+            'checkpointStatus',
+            'phaseAnalyticsByStage'
         ));
+    }
+
+    public function touchStage(Lesson $lesson, string $stage)
+    {
+        if (! in_array($stage, self::STAGES, true)) {
+            return response()->json(['error' => 'Invalid stage'], 422);
+        }
+
+        $analytic = $this->inquiryAnalytics->touchStage(Auth::user(), $lesson, $stage);
+
+        return response()->json([
+            'success' => true,
+            'stage' => $stage,
+            'time_spent_seconds' => $analytic->time_spent_seconds,
+        ]);
+    }
+
+    public function saveReflection(Request $request, Lesson $lesson, string $stage)
+    {
+        if (! in_array($stage, self::STAGES, true)) {
+            return response()->json(['error' => 'Invalid stage'], 422);
+        }
+
+        $validated = $request->validate([
+            'reflection_text' => 'required|string|min:10|max:4000',
+        ]);
+
+        $analytic = $this->inquiryAnalytics->saveReflection(
+            Auth::user(),
+            $lesson,
+            $stage,
+            $validated['reflection_text']
+        );
+
+        return response()->json([
+            'success' => true,
+            'stage' => $stage,
+            'reflection_quality_auto' => $analytic->reflection_quality_auto,
+            'reflection_quality_final' => $analytic->reflection_quality_final,
+            'updated_at' => optional($analytic->updated_at)->toDateTimeString(),
+        ]);
     }
 
     public function completeActivity(Request $request, Lesson $lesson, string $stage)
@@ -192,8 +252,7 @@ class LessonController extends Controller
 
     public function markStageComplete(Request $request, Lesson $lesson, $stage)
     {
-        $validStages = ['engage', 'explore', 'explain', 'elaborate', 'evaluate'];
-        if (!in_array($stage, $validStages)) {
+        if (! in_array($stage, self::STAGES, true)) {
             return response()->json(['error' => 'Invalid stage'], 422);
         }
 
@@ -289,6 +348,8 @@ class LessonController extends Controller
 
         $progress->save();
 
+        $this->inquiryAnalytics->markStageComplete(Auth::user(), $lesson, $stage);
+
         return response()->json(['success' => true, 'progress' => $progress]);
     }
 
@@ -345,6 +406,8 @@ class LessonController extends Controller
             $progress->completed_at = now();
         }
         $progress->save();
+
+        $this->inquiryAnalytics->markStageComplete(Auth::user(), $lesson, 'engage');
 
         return response()->json([
             'success' => true,
