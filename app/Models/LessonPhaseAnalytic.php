@@ -23,6 +23,7 @@ class LessonPhaseAnalytic extends Model
         'reflection_quality_auto',
         'reflection_quality_teacher',
         'reflection_quality_final',
+        'evaluation_final_score',
     ];
 
     protected $casts = [

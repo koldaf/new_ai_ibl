@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Lesson;
 use App\Models\LessonPhaseAnalytic;
 use App\Models\LessonProgress;
+use App\Models\QuizQuestion;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
@@ -191,6 +192,66 @@ class InquiryPhaseAnalyticsEndpointsTest extends TestCase
             'stage' => 'engage',
             'reflection_quality_teacher' => 91,
             'reflection_quality_final' => 91,
+        ]);
+    }
+
+    #[Test]
+    public function quiz_submission_persists_evaluation_final_score_in_phase_analytics(): void
+    {
+        $student = User::query()->forceCreate($this->userPayload('Student One', 'student', 'student6@example.test'));
+        $lesson = Lesson::create([
+            'title' => 'Electric Circuits',
+            'description' => 'Lesson description',
+        ]);
+
+        LessonProgress::create([
+            'user_id' => $student->id,
+            'lesson_id' => $lesson->id,
+            'engage_completed' => true,
+            'explore_completed' => true,
+            'explain_completed' => true,
+            'elaborate_completed' => true,
+            'evaluate_completed' => false,
+            'completed' => false,
+        ]);
+
+        $q1 = QuizQuestion::create([
+            'lesson_id' => $lesson->id,
+            'question' => 'Question 1',
+            'option_a' => 'A1',
+            'option_b' => 'B1',
+            'option_c' => 'C1',
+            'option_d' => 'D1',
+            'correct_option' => 'a',
+        ]);
+
+        $q2 = QuizQuestion::create([
+            'lesson_id' => $lesson->id,
+            'question' => 'Question 2',
+            'option_a' => 'A2',
+            'option_b' => 'B2',
+            'option_c' => 'C2',
+            'option_d' => 'D2',
+            'correct_option' => 'b',
+        ]);
+
+        $response = $this->actingAs($student)->postJson(route('student.lessons.quiz.submit', $lesson), [
+            'answers' => [
+                $q1->id => 'a',
+                $q2->id => 'd',
+            ],
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('percentage', 50);
+
+        $this->assertDatabaseHas('lesson_phase_analytics', [
+            'user_id' => $student->id,
+            'lesson_id' => $lesson->id,
+            'stage' => 'evaluate',
+            'evaluation_final_score' => 50,
         ]);
     }
 

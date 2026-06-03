@@ -124,6 +124,7 @@
                             <th class="text-end">Time (min)</th>
                             <th class="text-end">Questions</th>
                             <th class="text-end">Evidence</th>
+                            <th class="text-end">Evaluation Final Score</th>
                             <th class="text-end">Auto Score</th>
                             <th class="text-end">Teacher Score</th>
                             <th class="text-end">Final Score</th>
@@ -139,6 +140,7 @@
                                 <td class="text-end">{{ number_format(((int) ($phase?->time_spent_seconds ?? 0)) / 60, 1) }}</td>
                                 <td class="text-end">{{ (int) ($phase?->questions_generated ?? 0) }}</td>
                                 <td class="text-end">{{ (int) ($phase?->evidence_sources_consulted ?? 0) }}</td>
+                                <td class="text-end">{{ is_null($phase?->evaluation_final_score) ? '—' : $phase->evaluation_final_score }}</td>
                                 <td class="text-end">{{ is_null($phase?->reflection_quality_auto) ? '—' : $phase->reflection_quality_auto }}</td>
                                 <td class="text-end" id="teacher-score-{{ $stage }}">{{ is_null($phase?->reflection_quality_teacher) ? '—' : $phase->reflection_quality_teacher }}</td>
                                 <td class="text-end" id="final-score-{{ $stage }}">{{ is_null($phase?->reflection_quality_final) ? '—' : $phase->reflection_quality_final }}</td>

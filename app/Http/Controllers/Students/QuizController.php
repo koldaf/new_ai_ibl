@@ -63,6 +63,8 @@ class QuizController extends Controller
             }
         }
 
+        $percentage = $totalQuestions > 0 ? round(($correctCount / $totalQuestions) * 100) : 0;
+
         $progress = LessonProgress::where('user_id', Auth::id())
             ->where('lesson_id', $lesson->id)
             ->first();
@@ -86,7 +88,7 @@ class QuizController extends Controller
             $this->inquiryAnalytics->markStageComplete($request->user(), $lesson, 'evaluate');
         }
 
-        $percentage = $totalQuestions > 0 ? round(($correctCount / $totalQuestions) * 100) : 0;
+        $this->inquiryAnalytics->setEvaluationFinalScore($request->user(), $lesson, (int) $percentage);
 
         return response()->json([
             'success' => true,

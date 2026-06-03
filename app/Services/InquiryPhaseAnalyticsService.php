@@ -77,6 +77,20 @@ class InquiryPhaseAnalyticsService
     }
 
     /**
+     * Persist final quiz score for the Evaluate stage as 0-100 percentage.
+     */
+    public function setEvaluationFinalScore(User $user, Lesson $lesson, int $percentage): LessonPhaseAnalytic
+    {
+        $analytic = $this->touchStage($user, $lesson, 'evaluate');
+
+        $normalized = max(0, min(100, $percentage));
+        $analytic->evaluation_final_score = $normalized;
+        $analytic->save();
+
+        return $analytic;
+    }
+
+    /**
      * Persist reflection text and compute auto/final reflection quality.
      */
     public function saveReflection(User $user, Lesson $lesson, string $stage, string $reflectionText): LessonPhaseAnalytic

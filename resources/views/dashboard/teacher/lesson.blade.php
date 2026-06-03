@@ -106,6 +106,7 @@
                         || (float) ($row['avg_questions'] ?? 0) > 0
                         || (float) ($row['avg_evidence'] ?? 0) > 0
                         || (float) ($row['avg_reflection_quality'] ?? 0) > 0
+                        || (float) ($row['avg_evaluation_final_score'] ?? 0) > 0
                     );
                 });
             @endphp
@@ -133,6 +134,7 @@
                                 <th class="text-end">Avg Questions</th>
                                 <th class="text-end">Avg Evidence</th>
                                 <th class="text-end">Avg Reflection Quality</th>
+                                <th class="text-end">Avg Evaluation Final Score</th>
                                 <th class="text-end">Reflections Submitted</th>
                             </tr>
                         </thead>
@@ -145,6 +147,7 @@
                                     <td class="text-end">{{ number_format((float) ($row['avg_questions'] ?? 0), 1) }}</td>
                                     <td class="text-end">{{ number_format((float) ($row['avg_evidence'] ?? 0), 1) }}</td>
                                     <td class="text-end">{{ number_format((float) ($row['avg_reflection_quality'] ?? 0), 1) }}</td>
+                                    <td class="text-end">{{ number_format((float) ($row['avg_evaluation_final_score'] ?? 0), 1) }}</td>
                                     <td class="text-end">{{ (int) ($row['reflection_count'] ?? 0) }}</td>
                                 </tr>
                             @endforeach
@@ -265,6 +268,7 @@
                                     <div>Q: {{ number_format((float) ($row['inquiry_profile']['averages']['questions_generated'] ?? 0), 1) }}</div>
                                     <div>Evidence: {{ number_format((float) ($row['inquiry_profile']['averages']['evidence_sources_consulted'] ?? 0), 1) }}</div>
                                     <div>Reflection: {{ number_format((float) ($row['inquiry_profile']['averages']['reflection_quality_final'] ?? 0), 1) }}</div>
+                                    <div>Eval Final: {{ number_format((float) ($row['inquiry_profile']['averages']['evaluation_final_score'] ?? 0), 1) }}</div>
                                 </td>
                                 <td class="text-muted small">{{ optional($row['progress']->updated_at)->diffForHumans() }}</td>
                                 <td>
@@ -477,6 +481,15 @@ document.addEventListener('DOMContentLoaded', function () {
                         return (inquiryByStage[stage] && inquiryByStage[stage].avg_reflection_quality) || 0;
                     }),
                     backgroundColor: '#dc3545',
+                    borderRadius: 4,
+                    maxBarThickness: 26,
+                },
+                {
+                    label: 'Avg Evaluation Final Score',
+                    data: stageOrderForInquiry.map(function (stage) {
+                        return (inquiryByStage[stage] && inquiryByStage[stage].avg_evaluation_final_score) || 0;
+                    }),
+                    backgroundColor: '#6610f2',
                     borderRadius: 4,
                     maxBarThickness: 26,
                 },

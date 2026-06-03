@@ -233,6 +233,7 @@ class DashboardController extends Controller
                     'avg_questions' => round((float) $rows->avg('questions_generated'), 1),
                     'avg_evidence' => round((float) $rows->avg('evidence_sources_consulted'), 1),
                     'avg_reflection_quality' => round((float) $rows->avg('reflection_quality_final'), 1),
+                    'avg_evaluation_final_score' => round((float) $rows->avg('evaluation_final_score'), 1),
                     'reflection_count' => $rows->filter(fn (LessonPhaseAnalytic $item) => filled($item->reflection_text))->count(),
                 ];
             });
@@ -248,6 +249,7 @@ class DashboardController extends Controller
                             'questions_generated' => (int) $analytic->questions_generated,
                             'evidence_sources_consulted' => (int) $analytic->evidence_sources_consulted,
                             'reflection_quality_final' => $analytic->reflection_quality_final,
+                            'evaluation_final_score' => $analytic->evaluation_final_score,
                             'has_reflection' => filled($analytic->reflection_text),
                         ];
                     });
@@ -309,6 +311,7 @@ class DashboardController extends Controller
                 'questions_generated' => round((float) $inquiryByStage->avg('questions_generated'), 1),
                 'evidence_sources_consulted' => round((float) $inquiryByStage->avg('evidence_sources_consulted'), 1),
                 'reflection_quality_final' => round((float) $inquiryByStage->avg('reflection_quality_final'), 1),
+                'evaluation_final_score' => round((float) $inquiryByStage->avg('evaluation_final_score'), 1),
             ];
 
             return [
@@ -411,6 +414,8 @@ class DashboardController extends Controller
 
         $allProgress = $progressQuery->get();
         $userIds = $allProgress->pluck('user_id')->all();
+        $stageOrder = self::STAGE_ORDER;
+        $bloomLevels = self::BLOOM_ORDER;
 
         $exploreCountByUser = collect();
         if (!empty($userIds)) {
@@ -424,12 +429,52 @@ class DashboardController extends Controller
                 ->keyBy('user_id');
         }
 
+        $bloomByUser = collect();
+        if (!empty($userIds)) {
+            $bloomMessages = AiChatMessage::query()
+                ->where('lesson_id', $lesson->id)
+                ->whereIn('user_id', $userIds)
+                ->whereNotNull('bloom_level')
+                ->whereNotIn('question', ['__engage_start__', '__checkpoint_start__'])
+                ->get();
+
+            $bloomByUser = $bloomMessages
+                ->groupBy('user_id')
+                ->map(function ($messages) use ($bloomLevels) {
+                    $countByLevel = collect($bloomLevels)
+                        ->mapWithKeys(fn (string $level) => [$level => (int) $messages->where('bloom_level', $level)->count()]);
+
+                    $total = (int) $messages->count();
+
+                    return [
+                        'total' => $total,
+                        'count_by_level' => $countByLevel,
+                        'dominant_level' => $total > 0
+                            ? (string) $countByLevel->sortDesc()->keys()->first()
+                            : null,
+                        'avg_confidence' => $total > 0
+                            ? round((float) $messages->avg('bloom_confidence'), 2)
+                            : null,
+                    ];
+                });
+        }
+
+        $phaseByUser = collect();
+        if (!empty($userIds)) {
+            $phaseByUser = LessonPhaseAnalytic::query()
+                ->where('lesson_id', $lesson->id)
+                ->whereIn('user_id', $userIds)
+                ->get()
+                ->groupBy('user_id')
+                ->map(fn ($rows) => $rows->keyBy('stage'));
+        }
+
         $filename = 'lesson-' . $lesson->id . '-learners-' . now()->format('Ymd') . '.csv';
 
-        return response()->streamDownload(function () use ($allProgress, $exploreCountByUser, $totalActivities) {
+        return response()->streamDownload(function () use ($allProgress, $exploreCountByUser, $totalActivities, $bloomByUser, $phaseByUser, $stageOrder, $bloomLevels) {
             $handle = fopen('php://output', 'w');
 
-            fputcsv($handle, [
+            $headers = [
                 'Learner',
                 'Engage',
                 'Explore',
@@ -440,8 +485,32 @@ class DashboardController extends Controller
                 'Explore Activities Total',
                 'Overall Progress (%)',
                 'Lesson Completed',
+                'Bloom Total Questions',
+                'Bloom Dominant Level',
+                'Bloom Avg Confidence (%)',
+                'Inquiry Avg Time (min)',
+                'Inquiry Avg Questions',
+                'Inquiry Avg Evidence',
+                'Inquiry Avg Reflection Final',
+                'Inquiry Avg Evaluation Final Score',
+                'Inquiry Reflection Count',
                 'Last Updated',
-            ]);
+            ];
+
+            foreach ($bloomLevels as $level) {
+                $headers[] = 'Bloom ' . ucfirst($level) . ' Count';
+            }
+
+            foreach ($stageOrder as $stage) {
+                $prefix = ucfirst($stage);
+                $headers[] = $prefix . ' Time (min)';
+                $headers[] = $prefix . ' Questions';
+                $headers[] = $prefix . ' Evidence';
+                $headers[] = $prefix . ' Reflection Final';
+                $headers[] = $prefix . ' Evaluation Final Score';
+            }
+
+            fputcsv($handle, $headers);
 
             foreach ($allProgress as $progress) {
                 $completedStages = collect([
@@ -454,7 +523,24 @@ class DashboardController extends Controller
 
                 $exploreCount = (int) ($exploreCountByUser->get($progress->user_id)->completed_count ?? 0);
 
-                fputcsv($handle, [
+                $bloomProfile = $bloomByUser->get($progress->user_id, [
+                    'total' => 0,
+                    'count_by_level' => collect($bloomLevels)->mapWithKeys(fn (string $level) => [$level => 0]),
+                    'dominant_level' => null,
+                    'avg_confidence' => null,
+                ]);
+
+                $phaseRows = collect($phaseByUser->get($progress->user_id, collect()));
+                $inquiryAvg = [
+                    'time' => round((float) $phaseRows->avg('time_spent_seconds') / 60, 1),
+                    'questions' => round((float) $phaseRows->avg('questions_generated'), 1),
+                    'evidence' => round((float) $phaseRows->avg('evidence_sources_consulted'), 1),
+                    'reflection_final' => round((float) $phaseRows->avg('reflection_quality_final'), 1),
+                    'evaluation_final' => round((float) $phaseRows->avg('evaluation_final_score'), 1),
+                    'reflection_count' => (int) $phaseRows->filter(fn (LessonPhaseAnalytic $row) => filled($row->reflection_text))->count(),
+                ];
+
+                $row = [
                     $progress->user?->name ?? 'Unknown',
                     $progress->engage_completed ? 'Yes' : 'No',
                     $progress->explore_completed ? 'Yes' : 'No',
@@ -465,8 +551,33 @@ class DashboardController extends Controller
                     $totalActivities,
                     round(($completedStages / 5) * 100),
                     $progress->completed ? 'Yes' : 'No',
+                    (int) ($bloomProfile['total'] ?? 0),
+                    $bloomProfile['dominant_level'] ? ucfirst((string) $bloomProfile['dominant_level']) : '',
+                    !is_null($bloomProfile['avg_confidence']) ? (int) round(((float) $bloomProfile['avg_confidence']) * 100) : '',
+                    $inquiryAvg['time'],
+                    $inquiryAvg['questions'],
+                    $inquiryAvg['evidence'],
+                    $inquiryAvg['reflection_final'],
+                    $inquiryAvg['evaluation_final'],
+                    $inquiryAvg['reflection_count'],
                     optional($progress->updated_at)->toDateTimeString() ?? '',
-                ]);
+                ];
+
+                foreach ($bloomLevels as $level) {
+                    $row[] = (int) (($bloomProfile['count_by_level'][$level] ?? 0));
+                }
+
+                foreach ($stageOrder as $stage) {
+                    /** @var LessonPhaseAnalytic|null $stageRow */
+                    $stageRow = $phaseRows->get($stage);
+                    $row[] = $stageRow ? round(((float) $stageRow->time_spent_seconds) / 60, 1) : 0;
+                    $row[] = $stageRow ? (int) $stageRow->questions_generated : 0;
+                    $row[] = $stageRow ? (int) $stageRow->evidence_sources_consulted : 0;
+                    $row[] = $stageRow && !is_null($stageRow->reflection_quality_final) ? (int) $stageRow->reflection_quality_final : '';
+                    $row[] = $stageRow && !is_null($stageRow->evaluation_final_score) ? (int) $stageRow->evaluation_final_score : '';
+                }
+
+                fputcsv($handle, $row);
             }
 
             fclose($handle);
