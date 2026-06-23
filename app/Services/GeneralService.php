@@ -3,7 +3,8 @@ namespace App\Services;
 
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log ;
+use Illuminate\Support\Facades\Log;
+use App\Services\AiPerformanceLogger;
 use App\Services\OllamaEmbeddingGenerator;
 
 class GeneralService
@@ -77,6 +78,7 @@ class GeneralService
         /** * Query your local Ollama model. */ 
         protected function askOllama(string $question): ?string 
         { 
+            $callStart = microtime(true);
             try { 
                 $prompt = $this->buildPrompt($question, 'question_classifier'); 
                 $response = Http::post($this->ollamaUrl . '/api/generate', [ 
@@ -84,11 +86,22 @@ class GeneralService
                     'prompt' => $prompt, 
                     'stream' => false, 
                     ]); 
+                    $wallClockMs = (microtime(true) - $callStart) * 1000;
                     Log::info('Ollama response: ' . $response);
-                    return $response->json()['response'] ?? null; 
+                    $data = $response->json();
+                    AiPerformanceLogger::log(
+                        is_array($data) ? $data : [],
+                        $wallClockMs,
+                        ['caller' => 'general_classify', 'model_name' => $this->llmModel, 'question_snippet' => $question]
+                    );
+                    return $data['response'] ?? null; 
                 } 
             catch (\Exception $e) { 
-                //Log::error('Ollama query failed: ' . $e);
+                AiPerformanceLogger::logError(
+                    (microtime(true) - $callStart) * 1000,
+                    ['caller' => 'general_classify', 'model_name' => $this->llmModel],
+                    $e->getMessage()
+                );
                 return null; 
                 }
         }

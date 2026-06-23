@@ -1,0 +1,522 @@
+@extends('layout.app')
+
+@section('title', $lesson->title)
+
+@section('content')
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="mb-1">{{ $lesson->title }}</h1>
+            <p class="text-muted mb-0">Learners tracked: {{ $learnerCount }} • Explore activities: {{ $exploreActivities->count() }}</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{{ route('teacher.lessons.export', array_merge(['lesson' => $lesson], array_filter($filters))) }}" class="btn btn-outline-success">
+                <i class="bi bi-download me-1"></i>Export CSV
+            </a>
+            <a href="{{ route('teacher.dashboard') }}" class="btn btn-outline-secondary">Back to dashboard</a>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="stat-card h-100">
+                <div class="stat-icon green"><i class="bi bi-check2-circle"></i></div>
+                <div>
+                    <div class="stat-label">Overall Completion</div>
+                    <div class="stat-value">{{ $overallCompletionRate }}%</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-8">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="small text-muted mb-2">Stage Completion Rates</div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <span class="badge text-bg-light">Engage {{ $stagePercentages['engage'] }}%</span>
+                        <span class="badge text-bg-light">Explore {{ $stagePercentages['explore'] }}%</span>
+                        <span class="badge text-bg-light">Explain {{ $stagePercentages['explain'] }}%</span>
+                        <span class="badge text-bg-light">Elaborate {{ $stagePercentages['elaborate'] }}%</span>
+                        <span class="badge text-bg-light">Evaluate {{ $stagePercentages['evaluate'] }}%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">Bloom Question Analytics (Current Lesson Filters)</div>
+        <div class="card-body">
+            @php
+                $totalBloomQuestions = $lessonBloomStats->sum('count');
+            @endphp
+            @if($totalBloomQuestions === 0)
+                <p class="text-muted mb-0">No Bloom-classified learner questions for the selected filters.</p>
+            @else
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                    <div class="small text-muted">Total Bloom-classified learner questions: {{ $totalBloomQuestions }}</div>
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Bloom view mode">
+                        <button type="button" class="btn btn-primary" id="lesson-bloom-toggle-chart">Chart</button>
+                        <button type="button" class="btn btn-outline-primary" id="lesson-bloom-toggle-table">Table</button>
+                    </div>
+                </div>
+
+                <div id="lesson-bloom-chart-wrap" style="height: 320px;">
+                    <canvas id="lessonBloomClusteredChart"></canvas>
+                </div>
+
+                <div id="lesson-bloom-table-wrap" class="table-responsive d-none">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Bloom Level</th>
+                                <th class="text-end">Question Count</th>
+                                <th class="text-end">Avg Confidence</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($lessonBloomStats as $stat)
+                                <tr>
+                                    <td>{{ ucfirst($stat['level']) }}</td>
+                                    <td class="text-end">{{ $stat['count'] }}</td>
+                                    <td class="text-end">
+                                        @if(!is_null($stat['avg_confidence']))
+                                            {{ (int) round($stat['avg_confidence'] * 100) }}%
+                                        @else
+                                            —
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">Inquiry Phase Analytics (Current Lesson Filters)</div>
+        <div class="card-body">
+            @php
+                $phaseOrder = ['engage', 'explore', 'explain', 'elaborate', 'evaluate'];
+                $hasPhaseAnalytics = collect($phaseOrder)->contains(function ($stage) use ($phaseAnalyticsByStage) {
+                    $row = $phaseAnalyticsByStage->get($stage);
+                    return $row && (
+                        (float) ($row['avg_time_minutes'] ?? 0) > 0
+                        || (float) ($row['avg_questions'] ?? 0) > 0
+                        || (float) ($row['avg_evidence'] ?? 0) > 0
+                        || (float) ($row['avg_reflection_quality'] ?? 0) > 0
+                        || (float) ($row['avg_evaluation_final_score'] ?? 0) > 0
+                    );
+                });
+            @endphp
+
+            @if(!$hasPhaseAnalytics)
+                <p class="text-muted mb-0">No inquiry phase analytics captured for the selected learners yet.</p>
+            @else
+                <div class="d-flex justify-content-end mb-3">
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Inquiry phase view mode">
+                        <button type="button" class="btn btn-primary" id="lesson-inquiry-toggle-chart">Chart</button>
+                        <button type="button" class="btn btn-outline-primary" id="lesson-inquiry-toggle-table">Table</button>
+                    </div>
+                </div>
+
+                <div id="lesson-inquiry-chart-wrap" style="height: 320px;">
+                    <canvas id="lessonInquiryClusteredChart"></canvas>
+                </div>
+
+                <div id="lesson-inquiry-table-wrap" class="table-responsive d-none">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Stage</th>
+                                <th class="text-end">Avg Time (min)</th>
+                                <th class="text-end">Avg Questions</th>
+                                <th class="text-end">Avg Evidence</th>
+                                <th class="text-end">Avg Reflection Quality</th>
+                                <th class="text-end">Avg Evaluation Final Score</th>
+                                <th class="text-end">Reflections Submitted</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($phaseOrder as $stage)
+                                @php $row = $phaseAnalyticsByStage->get($stage, []); @endphp
+                                <tr>
+                                    <td>{{ ucfirst($stage) }}</td>
+                                    <td class="text-end">{{ number_format((float) ($row['avg_time_minutes'] ?? 0), 1) }}</td>
+                                    <td class="text-end">{{ number_format((float) ($row['avg_questions'] ?? 0), 1) }}</td>
+                                    <td class="text-end">{{ number_format((float) ($row['avg_evidence'] ?? 0), 1) }}</td>
+                                    <td class="text-end">{{ number_format((float) ($row['avg_reflection_quality'] ?? 0), 1) }}</td>
+                                    <td class="text-end">{{ number_format((float) ($row['avg_evaluation_final_score'] ?? 0), 1) }}</td>
+                                    <td class="text-end">{{ (int) ($row['reflection_count'] ?? 0) }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">Explore Activity Checklist</div>
+        <div class="card-body">
+            @if($exploreActivities->isEmpty())
+                <p class="text-muted mb-0">This lesson has no tracked Explore activities.</p>
+            @else
+                <ul class="mb-0">
+                    @foreach($exploreActivities as $activity)
+                        <li>{{ $activity['title'] }}</li>
+                    @endforeach
+                </ul>
+            @endif
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" action="{{ route('teacher.lessons.show', $lesson) }}" class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label for="learner" class="form-label">Learner</label>
+                    <input type="text" id="learner" name="learner" class="form-control" value="{{ $filters['learner'] }}" placeholder="Search by learner name">
+                </div>
+                <div class="col-md-3">
+                    <label for="status" class="form-label">Status</label>
+                    <select id="status" name="status" class="form-select">
+                        <option value="">All</option>
+                        <option value="completed" {{ $filters['status'] === 'completed' ? 'selected' : '' }}>Completed</option>
+                        <option value="in_progress" {{ $filters['status'] === 'in_progress' ? 'selected' : '' }}>In progress</option>
+                        <option value="not_started" {{ $filters['status'] === 'not_started' ? 'selected' : '' }}>Not started</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="sort" class="form-label">Sort by</label>
+                    <select id="sort" name="sort" class="form-select">
+                        <option value="" {{ $filters['sort'] === '' ? 'selected' : '' }}>Latest update</option>
+                        <option value="name_asc" {{ $filters['sort'] === 'name_asc' ? 'selected' : '' }}>Learner name</option>
+                        <option value="progress_desc" {{ $filters['sort'] === 'progress_desc' ? 'selected' : '' }}>Highest progress</option>
+                    </select>
+                </div>
+                <div class="col-md-2 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary w-100">Apply</button>
+                    <a href="{{ route('teacher.lessons.show', $lesson) }}" class="btn btn-outline-secondary">Reset</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">Learner Progress</div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table mb-0">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Learner</th>
+                            <th>Overall Progress</th>
+                            <th>Stage Status</th>
+                            <th>Explore Activity Count</th>
+                            <th>Bloom Profile</th>
+                            <th>Inquiry Avg</th>
+                            <th>Updated</th>
+                            <th>Lesson Complete</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($studentRows as $index => $row)
+                            <tr>
+                                <td class="fw-semibold">{{ $index + 1 }}</td>
+                                <td class="fw-semibold">{{ ucfirst($row['user']->name) }}</td>
+                                <td style="min-width: 170px;">
+                                    <div class="small fw-semibold mb-1">{{ $row['overall_progress'] }}%</div>
+                                    <div class="progress" style="height: 8px;">
+                                        <div class="progress-bar" role="progressbar" style="width: {{ $row['overall_progress'] }}%;" aria-valuenow="{{ $row['overall_progress'] }}" aria-valuemin="0" aria-valuemax="100"></div>
+                                    </div>
+                                </td>
+                                <td style="min-width: 250px;">
+                                    <div class="d-flex flex-wrap gap-1 small">
+                                        <span class="badge {{ $row['progress']->engage_completed ? 'text-bg-success' : 'text-bg-secondary' }}">Engage</span>
+                                        <span class="badge {{ $row['progress']->explore_completed ? 'text-bg-success' : 'text-bg-secondary' }}">Explore</span>
+                                        <span class="badge {{ $row['progress']->explain_completed ? 'text-bg-success' : 'text-bg-secondary' }}">Explain</span>
+                                        <span class="badge {{ $row['progress']->elaborate_completed ? 'text-bg-success' : 'text-bg-secondary' }}">Elaborate</span>
+                                        <span class="badge {{ $row['progress']->evaluate_completed ? 'text-bg-success' : 'text-bg-secondary' }}">Evaluate</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    {{ $row['explore_completed_count'] }} / {{ $row['explore_total_count'] }}
+                                </td>
+                                <td style="min-width: 220px;">
+                                    @if(($row['bloom_profile']['total'] ?? 0) > 0)
+                                        <div class="small fw-semibold mb-1">
+                                            Dominant: {{ ucfirst($row['bloom_profile']['dominant_level']) }}
+                                        </div>
+                                        <div class="d-flex flex-wrap gap-1">
+                                            @foreach($row['bloom_profile']['count_by_level'] as $level => $count)
+                                                @if($count > 0)
+                                                    <span class="badge text-bg-light border">{{ ucfirst($level) }} {{ $count }}</span>
+                                                @endif
+                                            @endforeach
+                                        </div>
+                                    @else
+                                        <span class="text-muted small">No Bloom data yet</span>
+                                    @endif
+                                </td>
+                                <td class="small" style="min-width: 180px;">
+                                    <div>Time: {{ number_format((float) ($row['inquiry_profile']['averages']['time_minutes'] ?? 0), 1) }}m</div>
+                                    <div>Q: {{ number_format((float) ($row['inquiry_profile']['averages']['questions_generated'] ?? 0), 1) }}</div>
+                                    <div>Evidence: {{ number_format((float) ($row['inquiry_profile']['averages']['evidence_sources_consulted'] ?? 0), 1) }}</div>
+                                    <div>Reflection: {{ number_format((float) ($row['inquiry_profile']['averages']['reflection_quality_final'] ?? 0), 1) }}</div>
+                                    <div>Eval Final: {{ number_format((float) ($row['inquiry_profile']['averages']['evaluation_final_score'] ?? 0), 1) }}</div>
+                                </td>
+                                <td class="text-muted small">{{ optional($row['progress']->updated_at)->diffForHumans() }}</td>
+                                <td>
+                                    <span class="badge {{ $row['progress']->completed ? 'text-bg-success' : 'text-bg-warning' }}">
+                                        {{ $row['progress']->completed ? 'Yes' : 'No' }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <a href="{{ route('teacher.lessons.student-activity', ['lesson' => $lesson->id, 'student' => $row['user']->id]) }}"
+                                       class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-eye me-1"></i> View Activity
+                                    </a>
+                                </td>
+                            </tr>
+                        @empty
+                        <tr>
+                            <td colspan="10" class="text-center text-muted py-4">No learner records match the selected filters.</td>
+                        </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        @if(method_exists($studentRows, 'links'))
+            <div class="card-footer bg-white">
+                {{ $studentRows->links() }}
+            </div>
+        @endif
+    </div>
+</div>
+@endsection
+
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const chartWrap = document.getElementById('lesson-bloom-chart-wrap');
+    const tableWrap = document.getElementById('lesson-bloom-table-wrap');
+    const chartBtn = document.getElementById('lesson-bloom-toggle-chart');
+    const tableBtn = document.getElementById('lesson-bloom-toggle-table');
+
+    function activateLessonBloomView(mode) {
+        if (!chartWrap || !tableWrap || !chartBtn || !tableBtn) {
+            return;
+        }
+
+        const chartMode = mode === 'chart';
+        chartWrap.classList.toggle('d-none', !chartMode);
+        tableWrap.classList.toggle('d-none', chartMode);
+        chartBtn.classList.toggle('btn-primary', chartMode);
+        chartBtn.classList.toggle('btn-outline-primary', !chartMode);
+        tableBtn.classList.toggle('btn-primary', !chartMode);
+        tableBtn.classList.toggle('btn-outline-primary', chartMode);
+    }
+
+    chartBtn?.addEventListener('click', function () {
+        activateLessonBloomView('chart');
+    });
+
+    tableBtn?.addEventListener('click', function () {
+        activateLessonBloomView('table');
+    });
+
+    activateLessonBloomView('chart');
+
+    const inquiryChartWrap = document.getElementById('lesson-inquiry-chart-wrap');
+    const inquiryTableWrap = document.getElementById('lesson-inquiry-table-wrap');
+    const inquiryChartBtn = document.getElementById('lesson-inquiry-toggle-chart');
+    const inquiryTableBtn = document.getElementById('lesson-inquiry-toggle-table');
+
+    function activateLessonInquiryView(mode) {
+        if (!inquiryChartWrap || !inquiryTableWrap || !inquiryChartBtn || !inquiryTableBtn) {
+            return;
+        }
+
+        const chartMode = mode === 'chart';
+        inquiryChartWrap.classList.toggle('d-none', !chartMode);
+        inquiryTableWrap.classList.toggle('d-none', chartMode);
+        inquiryChartBtn.classList.toggle('btn-primary', chartMode);
+        inquiryChartBtn.classList.toggle('btn-outline-primary', !chartMode);
+        inquiryTableBtn.classList.toggle('btn-primary', !chartMode);
+        inquiryTableBtn.classList.toggle('btn-outline-primary', chartMode);
+    }
+
+    inquiryChartBtn?.addEventListener('click', function () {
+        activateLessonInquiryView('chart');
+    });
+
+    inquiryTableBtn?.addEventListener('click', function () {
+        activateLessonInquiryView('table');
+    });
+
+    activateLessonInquiryView('chart');
+
+    const chartEl = document.getElementById('lessonBloomClusteredChart');
+
+    if (chartEl && typeof window.Chart !== 'undefined') {
+        const labels = ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'];
+        const stageOrder = ['engage', 'explore', 'explain', 'elaborate', 'evaluate'];
+        const stageLabel = {
+            engage: 'Engage',
+            explore: 'Explore',
+            explain: 'Explain',
+            elaborate: 'Elaborate',
+            evaluate: 'Evaluate'
+        };
+        const stageColor = {
+            engage: '#0d6efd',
+            explore: '#198754',
+            explain: '#fd7e14',
+            elaborate: '#6f42c1',
+            evaluate: '#dc3545'
+        };
+
+        const bloomByStage = @json($lessonBloomByStage);
+
+        const datasets = stageOrder.map(function (stage) {
+            const source = bloomByStage[stage] || {};
+
+            return {
+                label: stageLabel[stage],
+                data: [
+                    source.remember || 0,
+                    source.understand || 0,
+                    source.apply || 0,
+                    source.analyze || 0,
+                    source.evaluate || 0,
+                    source.create || 0,
+                ],
+                backgroundColor: stageColor[stage],
+                borderRadius: 4,
+                maxBarThickness: 28,
+            };
+        });
+
+        new window.Chart(chartEl, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: datasets,
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            precision: 0
+                        },
+                        title: {
+                            display: true,
+                            text: 'Question Count'
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    const inquiryChartEl = document.getElementById('lessonInquiryClusteredChart');
+    const inquiryByStage = @json($phaseAnalyticsByStage);
+
+    if (!inquiryChartEl || typeof window.Chart === 'undefined') {
+        return;
+    }
+
+    const inquiryLabels = ['Engage', 'Explore', 'Explain', 'Elaborate', 'Evaluate'];
+    const stageOrderForInquiry = ['engage', 'explore', 'explain', 'elaborate', 'evaluate'];
+
+    new window.Chart(inquiryChartEl, {
+        type: 'bar',
+        data: {
+            labels: inquiryLabels,
+            datasets: [
+                {
+                    label: 'Avg Time (min)',
+                    data: stageOrderForInquiry.map(function (stage) {
+                        return (inquiryByStage[stage] && inquiryByStage[stage].avg_time_minutes) || 0;
+                    }),
+                    backgroundColor: '#0d6efd',
+                    borderRadius: 4,
+                    maxBarThickness: 26,
+                },
+                {
+                    label: 'Avg Questions',
+                    data: stageOrderForInquiry.map(function (stage) {
+                        return (inquiryByStage[stage] && inquiryByStage[stage].avg_questions) || 0;
+                    }),
+                    backgroundColor: '#198754',
+                    borderRadius: 4,
+                    maxBarThickness: 26,
+                },
+                {
+                    label: 'Avg Evidence',
+                    data: stageOrderForInquiry.map(function (stage) {
+                        return (inquiryByStage[stage] && inquiryByStage[stage].avg_evidence) || 0;
+                    }),
+                    backgroundColor: '#fd7e14',
+                    borderRadius: 4,
+                    maxBarThickness: 26,
+                },
+                {
+                    label: 'Avg Reflection Quality',
+                    data: stageOrderForInquiry.map(function (stage) {
+                        return (inquiryByStage[stage] && inquiryByStage[stage].avg_reflection_quality) || 0;
+                    }),
+                    backgroundColor: '#dc3545',
+                    borderRadius: 4,
+                    maxBarThickness: 26,
+                },
+                {
+                    label: 'Avg Evaluation Final Score',
+                    data: stageOrderForInquiry.map(function (stage) {
+                        return (inquiryByStage[stage] && inquiryByStage[stage].avg_evaluation_final_score) || 0;
+                    }),
+                    backgroundColor: '#6610f2',
+                    borderRadius: 4,
+                    maxBarThickness: 26,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0
+                    },
+                    title: {
+                        display: true,
+                        text: 'Average Value'
+                    }
+                }
+            }
+        }
+    });
+});
+</script>
+@endpush

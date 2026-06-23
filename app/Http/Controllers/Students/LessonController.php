@@ -4,15 +4,25 @@ namespace App\Http\Controllers\Students;
 
 use App\Http\Controllers\Controller;
 use App\Models\AiChatMessage;
+use App\Models\EngageMcqAttempt;
 use App\Models\Lesson;
+use App\Models\LessonActivityCompletion;
+use App\Models\LessonPhaseAnalytic;
 use App\Models\LessonProgress;
 use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
+use App\Services\InquiryPhaseAnalyticsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class LessonController extends Controller
 {
+    private const STAGES = ['engage', 'explore', 'explain', 'elaborate', 'evaluate'];
+
+    public function __construct(private InquiryPhaseAnalyticsService $inquiryAnalytics)
+    {
+    }
+
     public function index()
     {
         $lessons = Lesson::with(['progress' => function ($q) {
@@ -24,14 +34,18 @@ class LessonController extends Controller
 
     public function show(Lesson $lesson)
     {
+        $user = Auth::user();
+
         // Get or create progress for this user and lesson
         $progress = LessonProgress::firstOrCreate([
-            'user_id' => Auth::id(),
+            'user_id' => $user->id,
             'lesson_id' => $lesson->id,
         ]);
 
+        $this->inquiryAnalytics->touchStage($user, $lesson, 'engage');
+
         // Load stage contents and media for each stage
-        $stages = ['engage', 'explore', 'explain', 'elaborate', 'evaluate'];
+        $stages = self::STAGES;
         $stageData = [];
         foreach ($stages as $stage) {
             $stageData[$stage] = [
@@ -41,14 +55,35 @@ class LessonController extends Controller
         }
 
         $engageMessages = AiChatMessage::query()
-            ->where('user_id', Auth::id())
+            ->where('user_id', $user->id)
             ->where('lesson_id', $lesson->id)
             ->where('stage', 'engage')
             ->orderBy('id')
             ->get();
 
         $latestEngageMessage = $engageMessages->last();
-        $canMarkEngageComplete = $latestEngageMessage?->engage_status === 'complete';
+        $engageMode = $lesson->getStageContent('engage')?->activity_mode ?? 'chat';
+        $engageMcqQuestion = $lesson->getEngageMcqQuestion('engage');
+        $engageMcqAttempt = EngageMcqAttempt::query()
+            ->where('user_id', Auth::id())
+            ->where('lesson_id', $lesson->id)
+            ->when($engageMcqQuestion, fn ($query) => $query->where('engage_mcq_question_id', $engageMcqQuestion->id))
+            ->latest('id')
+            ->first();
+        $exploreActivities = $lesson->getStageActivities('explore');
+        $exploreActivityCompletions = LessonActivityCompletion::query()
+            ->where('user_id', Auth::id())
+            ->where('lesson_id', $lesson->id)
+            ->where('stage', 'explore')
+            ->get()
+            ->keyBy(fn (LessonActivityCompletion $completion) => $completion->activity_type . '-' . $completion->activity_reference_id);
+        $exploreCompletedCount = $exploreActivityCompletions->count();
+        $allExploreActivitiesCompleted = $exploreActivities->isEmpty() || $exploreActivities->every(function (array $activity) use ($exploreActivityCompletions) {
+            return $exploreActivityCompletions->has($activity['activity_type'] . '-' . $activity['activity_reference_id']);
+        });
+        $canMarkEngageComplete = $engageMode === 'mcq'
+            ? (bool) $engageMcqAttempt
+            : $latestEngageMessage?->engage_status === 'complete';
 
         // Load quiz questions for evaluate stage
         $quizQuestions = $lesson->quizQuestions()->get();
@@ -59,6 +94,24 @@ class LessonController extends Controller
             ->get()
             ->keyBy('question_id');
 
+        // Checkpoint completion status for explore / explain / elaborate
+        $checkpointStages = ['explore', 'explain', 'elaborate'];
+        $checkpointStatus = [];
+        foreach ($checkpointStages as $cs) {
+            $checkpointStatus[$cs] = AiChatMessage::query()
+                ->where('user_id', $user->id)
+                ->where('lesson_id', $lesson->id)
+                ->where('stage', $cs)
+                ->where('engage_status', 'complete')
+                ->exists();
+        }
+
+        $phaseAnalyticsByStage = LessonPhaseAnalytic::query()
+            ->where('user_id', $user->id)
+            ->where('lesson_id', $lesson->id)
+            ->get()
+            ->keyBy('stage');
+
         return view('dashboard.student.lessons.show', compact(
             'lesson',
             'progress',
@@ -67,8 +120,129 @@ class LessonController extends Controller
             'quizQuestions',
             'previousAttempts',
             'engageMessages',
-            'canMarkEngageComplete'
+            'canMarkEngageComplete',
+            'engageMode',
+            'engageMcqQuestion',
+            'engageMcqAttempt',
+            'exploreActivities',
+            'exploreActivityCompletions',
+            'exploreCompletedCount',
+            'allExploreActivitiesCompleted',
+            'checkpointStatus',
+            'phaseAnalyticsByStage'
         ));
+    }
+
+    public function touchStage(Lesson $lesson, string $stage)
+    {
+        if (! in_array($stage, self::STAGES, true)) {
+            return response()->json(['error' => 'Invalid stage'], 422);
+        }
+
+        $analytic = $this->inquiryAnalytics->touchStage(Auth::user(), $lesson, $stage);
+
+        return response()->json([
+            'success' => true,
+            'stage' => $stage,
+            'time_spent_seconds' => $analytic->time_spent_seconds,
+        ]);
+    }
+
+    public function saveReflection(Request $request, Lesson $lesson, string $stage)
+    {
+        if (! in_array($stage, self::STAGES, true)) {
+            return response()->json(['error' => 'Invalid stage'], 422);
+        }
+
+        $validated = $request->validate([
+            'reflection_text' => 'required|string|min:10|max:4000',
+        ]);
+
+        $analytic = $this->inquiryAnalytics->saveReflection(
+            Auth::user(),
+            $lesson,
+            $stage,
+            $validated['reflection_text']
+        );
+
+        return response()->json([
+            'success' => true,
+            'stage' => $stage,
+            'reflection_quality_auto' => $analytic->reflection_quality_auto,
+            'reflection_quality_final' => $analytic->reflection_quality_final,
+            'updated_at' => optional($analytic->updated_at)->toDateTimeString(),
+        ]);
+    }
+
+    public function completeActivity(Request $request, Lesson $lesson, string $stage)
+    {
+        if ($stage !== 'explore') {
+            return response()->json(['error' => 'Activity tracking is only enabled for the Explore stage.'], 422);
+        }
+
+        $progress = LessonProgress::firstOrCreate([
+            'user_id' => Auth::id(),
+            'lesson_id' => $lesson->id,
+        ]);
+
+        if ($progress->explore_completed) {
+            return response()->json(['error' => 'Explore has already been completed for this lesson.'], 422);
+        }
+
+        $validated = $request->validate([
+            'activity_type' => 'required|in:stage_content,media',
+            'activity_reference_id' => 'required|integer|min:1',
+            'completed' => 'nullable|boolean',
+        ]);
+
+        $activities = $lesson->getStageActivities($stage);
+        $activityExists = $activities->contains(function (array $activity) use ($validated) {
+            return $activity['activity_type'] === $validated['activity_type']
+                && (int) $activity['activity_reference_id'] === (int) $validated['activity_reference_id'];
+        });
+
+        if (! $activityExists) {
+            return response()->json(['error' => 'Activity not found for this lesson stage.'], 404);
+        }
+
+        $shouldComplete = $request->boolean('completed', true);
+
+        if ($shouldComplete) {
+            LessonActivityCompletion::updateOrCreate(
+                [
+                    'user_id' => Auth::id(),
+                    'lesson_id' => $lesson->id,
+                    'stage' => $stage,
+                    'activity_type' => $validated['activity_type'],
+                    'activity_reference_id' => $validated['activity_reference_id'],
+                ],
+                [
+                    'completed_at' => now(),
+                ]
+            );
+        } else {
+            LessonActivityCompletion::query()
+                ->where('user_id', Auth::id())
+                ->where('lesson_id', $lesson->id)
+                ->where('stage', $stage)
+                ->where('activity_type', $validated['activity_type'])
+                ->where('activity_reference_id', $validated['activity_reference_id'])
+                ->delete();
+        }
+
+        $completedCount = LessonActivityCompletion::query()
+            ->where('user_id', Auth::id())
+            ->where('lesson_id', $lesson->id)
+            ->where('stage', $stage)
+            ->count();
+        $totalCount = $activities->count();
+
+        return response()->json([
+            'success' => true,
+            'completed_count' => $completedCount,
+            'total_count' => $totalCount,
+            'all_completed' => $totalCount === 0 || $completedCount >= $totalCount,
+        ]);
     }
 
     public function completeStage(Request $request, Lesson $lesson, string $stage)
@@ -78,8 +252,7 @@ class LessonController extends Controller
 
     public function markStageComplete(Request $request, Lesson $lesson, $stage)
     {
-        $validStages = ['engage', 'explore', 'explain', 'elaborate', 'evaluate'];
-        if (!in_array($stage, $validStages)) {
+        if (! in_array($stage, self::STAGES, true)) {
             return response()->json(['error' => 'Invalid stage'], 422);
         }
 
@@ -88,16 +261,75 @@ class LessonController extends Controller
             ->firstOrFail();
 
         if ($stage === 'engage') {
-            $latestEngageMessage = AiChatMessage::query()
+            $engageMode = $lesson->getStageContent('engage')?->activity_mode ?? 'chat';
+
+            if ($engageMode === 'mcq') {
+                $engageQuestion = $lesson->getEngageMcqQuestion('engage');
+                $engageAttempt = EngageMcqAttempt::query()
+                    ->where('user_id', Auth::id())
+                    ->where('lesson_id', $lesson->id)
+                    ->when($engageQuestion, fn ($query) => $query->where('engage_mcq_question_id', $engageQuestion->id))
+                    ->latest('id')
+                    ->first();
+
+                if (!$engageAttempt) {
+                    return response()->json([
+                        'error' => 'Submit the Engage checkpoint before marking this stage as complete.',
+                    ], 422);
+                }
+            } else {
+                $latestEngageMessage = AiChatMessage::query()
+                    ->where('user_id', Auth::id())
+                    ->where('lesson_id', $lesson->id)
+                    ->where('stage', 'engage')
+                    ->latest('id')
+                    ->first();
+
+                if (!$latestEngageMessage || $latestEngageMessage->engage_status !== 'complete') {
+                    return response()->json([
+                        'error' => 'Complete the Engage discussion with AI before marking this stage as complete.',
+                    ], 422);
+                }
+            }
+        }
+
+        if ($stage === 'explore') {
+            $totalActivities = $lesson->countStageActivities('explore');
+            $completedActivities = LessonActivityCompletion::query()
                 ->where('user_id', Auth::id())
                 ->where('lesson_id', $lesson->id)
-                ->where('stage', 'engage')
-                ->latest('id')
-                ->first();
+                ->where('stage', 'explore')
+                ->count();
 
-            if (!$latestEngageMessage || $latestEngageMessage->engage_status !== 'complete') {
+            if ($totalActivities > 0 && $completedActivities < $totalActivities) {
                 return response()->json([
-                    'error' => 'Complete the Engage discussion with AI before marking this stage as complete.',
+                    'error' => 'Complete every Explore activity before marking this stage as complete.',
+                ], 422);
+            }
+
+            $hasExploreCheckpoint = AiChatMessage::query()
+                ->where('user_id', Auth::id())
+                ->where('lesson_id', $lesson->id)
+                ->where('stage', 'explore')
+                ->where('engage_status', 'complete')
+                ->exists();
+            if (!$hasExploreCheckpoint) {
+                return response()->json([
+                    'error' => 'Complete the Explore checkpoint discussion before marking this stage as complete.',
+                ], 422);
+            }
+        }
+
+        if (in_array($stage, ['explain', 'elaborate'])) {
+            $hasCheckpoint = AiChatMessage::query()
+                ->where('user_id', Auth::id())
+                ->where('lesson_id', $lesson->id)
+                ->where('stage', $stage)
+                ->where('engage_status', 'complete')
+                ->exists();
+            if (!$hasCheckpoint) {
+                return response()->json([
+                    'error' => 'Complete the ' . ucfirst($stage) . ' checkpoint discussion before marking this stage as complete.',
                 ], 422);
             }
         }
@@ -116,7 +348,74 @@ class LessonController extends Controller
 
         $progress->save();
 
+        $this->inquiryAnalytics->markStageComplete(Auth::user(), $lesson, $stage);
+
         return response()->json(['success' => true, 'progress' => $progress]);
+    }
+
+    public function submitEngageMcq(Request $request, Lesson $lesson)
+    {
+        $engageMode = $lesson->getStageContent('engage')?->activity_mode ?? 'chat';
+        if ($engageMode !== 'mcq') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This lesson is not using MCQ mode for Engage.',
+            ], 422);
+        }
+
+        $question = $lesson->getEngageMcqQuestion('engage');
+        if (!$question) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No Engage checkpoint is configured for this lesson.',
+            ], 404);
+        }
+
+        $validated = $request->validate([
+            'selected_option' => 'required|in:a,b,c,d',
+        ]);
+
+        $selectedOption = strtolower($validated['selected_option']);
+        $isCorrect = $selectedOption === $question->correct_option;
+        $resolvedFeedback = $question->feedbackForOption($selectedOption);
+
+        $attempt = EngageMcqAttempt::updateOrCreate(
+            [
+                'user_id' => Auth::id(),
+                'lesson_id' => $lesson->id,
+                'engage_mcq_question_id' => $question->id,
+            ],
+            [
+                'selected_option' => $selectedOption,
+                'is_correct' => $isCorrect,
+                'resolved_feedback' => $resolvedFeedback,
+            ]
+        );
+
+        $progress = LessonProgress::firstOrCreate([
+            'user_id' => Auth::id(),
+            'lesson_id' => $lesson->id,
+        ]);
+        $progress->engage_completed = true;
+
+        $allCompleted = $progress->engage_completed && $progress->explore_completed &&
+            $progress->explain_completed && $progress->elaborate_completed &&
+            $progress->evaluate_completed;
+        if ($allCompleted && !$progress->completed) {
+            $progress->completed = true;
+            $progress->completed_at = now();
+        }
+        $progress->save();
+
+        $this->inquiryAnalytics->markStageComplete(Auth::user(), $lesson, 'engage');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Engage checkpoint submitted.',
+            'selected_option' => $attempt->selected_option,
+            'is_correct' => $attempt->is_correct,
+            'feedback' => $attempt->resolved_feedback,
+        ]);
     }
 
     public function submitQuiz(Request $request, Lesson $lesson)

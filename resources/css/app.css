@@ -8,3 +8,71 @@
 .modal-backdrop {
             z-index: 2055 !important;
         }
+
+/* Floating Denzy widget (lesson page) */
+.denzy-widget {
+    position: fixed;
+    right: 1.25rem;
+    bottom: 1.25rem;
+    z-index: 1200;
+}
+
+.denzy-widget-button {
+    width: 60px;
+    height: 60px;
+}
+
+.denzy-widget-panel {
+    width: 320px;
+    max-width: calc(100vw - 2rem);
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 0.75rem);
+    overflow-x: hidden;
+    display: none;
+}
+
+.denzy-widget.is-open .denzy-widget-panel {
+    display: block;
+}
+
+@media (max-width: 768px) {
+    .denzy-widget {
+        right: 0.9rem;
+        bottom: 0.9rem;
+    }
+
+    .denzy-widget-button {
+        width: 54px;
+        height: 54px;
+    }
+
+    .denzy-widget-panel {
+        width: min(320px, calc(100vw - 1.25rem));
+    }
+
+    #chat-messages {
+        height: min(360px, 55vh) !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .denzy-widget {
+        right: 0.7rem;
+        bottom: 0.7rem;
+    }
+
+    .denzy-widget-button {
+        width: 50px;
+        height: 50px;
+    }
+
+    .denzy-widget-panel {
+        width: calc(100vw - 1rem);
+        right: -0.2rem;
+    }
+
+    #chat-messages {
+        height: min(320px, 50vh) !important;
+    }
+}

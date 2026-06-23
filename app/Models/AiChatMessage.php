@@ -16,6 +16,8 @@ class AiChatMessage extends Model
         'question',
         'answer',
         'classification',
+        'bloom_level',
+        'bloom_confidence',
         'confidence',
         'feedback_text',
         'follow_up_question',
@@ -30,6 +32,7 @@ class AiChatMessage extends Model
     ];
 
     protected $casts = [
+        'bloom_confidence' => 'float',
         'confidence' => 'float',
     ];
 

@@ -5,19 +5,37 @@ namespace App\Http\Controllers\Students;
 use App\Http\Controllers\Controller;
 use App\Models\Lesson;
 use App\Models\AiChatMessage;
+use App\Services\AiMemoryService;
+use App\Services\BloomTaxonomyClassifier;
 use App\Services\EngageDecisionService;
+use App\Services\InquiryPhaseAnalyticsService;
 use App\Services\RagQueryService;
+use App\Services\StageCheckpointService;
 use Illuminate\Http\Request;
 
 class AIChatController extends Controller
 {
     protected RagQueryService $ragQueryService;
     protected EngageDecisionService $engageDecisionService;
+    protected AiMemoryService $memoryService;
+    protected StageCheckpointService $checkpointService;
+    protected BloomTaxonomyClassifier $bloomClassifier;
+    protected InquiryPhaseAnalyticsService $inquiryAnalytics;
 
-    public function __construct(RagQueryService $ragQueryService, EngageDecisionService $engageDecisionService)
-    {
+    public function __construct(
+        RagQueryService $ragQueryService,
+        EngageDecisionService $engageDecisionService,
+        AiMemoryService $memoryService,
+        StageCheckpointService $checkpointService,
+        BloomTaxonomyClassifier $bloomClassifier,
+        InquiryPhaseAnalyticsService $inquiryAnalytics
+    ) {
         $this->ragQueryService = $ragQueryService;
         $this->engageDecisionService = $engageDecisionService;
+        $this->memoryService = $memoryService;
+        $this->checkpointService = $checkpointService;
+        $this->bloomClassifier = $bloomClassifier;
+        $this->inquiryAnalytics = $inquiryAnalytics;
     }
 
     public function ask(Request $request, Lesson $lesson)
@@ -30,27 +48,41 @@ class AIChatController extends Controller
 
         $stage = $request->input('stage', 'engage');
         $intent = $request->input('intent', 'ask');
+        $user = $request->user();
 
         try {
+            $this->inquiryAnalytics->touchStage($user, $lesson, $stage);
+
             if ($stage === 'engage') {
+                if (($lesson->getStageContent('engage')?->activity_mode ?? 'chat') !== 'chat') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This lesson uses MCQ mode for Engage. Use the checkpoint instead of chat.',
+                    ], 422);
+                }
+
                 $payload = $intent === 'start'
-                    ? $this->engageDecisionService->generateStartQuestion($lesson)
-                    : $this->engageDecisionService->assessAnswer($lesson, $request->user(), $request->question);
+                    ? $this->engageDecisionService->generateStartQuestion($lesson, $user)
+                    : $this->engageDecisionService->assessAnswer($lesson, $user, $request->question);
+
+                $bloom = $this->classifyLearnerQuestion($request->question, $stage, $intent);
 
                 $parentMessage = AiChatMessage::query()
-                    ->where('user_id', $request->user()->id)
+                    ->where('user_id', $user->id)
                     ->where('lesson_id', $lesson->id)
                     ->where('stage', 'engage')
                     ->latest('id')
                     ->first();
 
                 $chat = AiChatMessage::create([
-                    'user_id' => $request->user()->id,
+                    'user_id' => $user->id,
                     'lesson_id' => $lesson->id,
                     'stage' => 'engage',
                     'question' => $request->question,
                     'answer' => $payload['answer'] ?? '',
                     'classification' => $payload['classification'] ?? null,
+                    'bloom_level' => $bloom['bloom_level'],
+                    'bloom_confidence' => $bloom['bloom_confidence'],
                     'confidence' => $payload['confidence'] ?? null,
                     'feedback_text' => $payload['feedback_text'] ?? null,
                     'follow_up_question' => $payload['follow_up_question'] ?? null,
@@ -64,12 +96,19 @@ class AIChatController extends Controller
                     'parent_message_id' => $parentMessage?->id,
                 ]);
 
+                if ($intent !== 'start' && filled($request->question)) {
+                    $evidenceCount = $this->inquiryAnalytics->deriveEvidenceCountFromResponse((string) ($payload['answer'] ?? ''));
+                    $this->inquiryAnalytics->recordQuestion($user, $lesson, $stage, $evidenceCount);
+                }
+
                 return response()->json([
                     'success' => true,
                     'stage' => 'engage',
                     'intent' => $intent,
                     'answer' => $chat->answer,
                     'classification' => $chat->classification,
+                    'bloom_level' => $chat->bloom_level,
+                    'bloom_confidence' => $chat->bloom_confidence,
                     'confidence' => $chat->confidence,
                     'engage_status' => $chat->engage_status,
                     'follow_up_question' => $chat->follow_up_question,
@@ -77,26 +116,49 @@ class AIChatController extends Controller
                 ]);
             }
 
+            $memoryHistory = $this->memoryService->getHistoryForPrompt($user, $lesson);
+            $memoryContext = $this->memoryService->buildPromptContext($memoryHistory, $lesson->id);
+
+            // Checkpoint flow for explore / explain / elaborate
+            if ($this->checkpointService->isCheckpointStage($stage) && in_array($intent, ['start', 'answer'], true)) {
+                return $this->handleCheckpoint($request, $lesson, $stage, $intent);
+            }
+
             $answer = $this->ragQueryService->generateResponse(
                 $request->question,
                 $lesson->id,
-                $stage
+                $stage,
+                $user->name,
+                5,
+                $memoryContext,
+                $this->memoryService->isEnabled()
             );
 
-            AIChatMessage::create([
-                'user_id' => $request->user()->id,
+            $bloom = $this->classifyLearnerQuestion($request->question, $stage, $intent);
+
+            AiChatMessage::create([
+                'user_id' => $user->id,
                 'lesson_id' => $lesson->id,
                 'stage' => $stage,
                 'question' => $request->question,
                 'answer' => $answer,
+                'bloom_level' => $bloom['bloom_level'],
+                'bloom_confidence' => $bloom['bloom_confidence'],
                 'context_source' => 'rag',
                 'retrieval_mode' => 'vector',
             ]);
-                        
+
+            if (in_array($intent, ['ask', 'answer'], true) && filled($request->question)) {
+                $evidenceCount = $this->inquiryAnalytics->deriveEvidenceCountFromResponse($answer);
+                $this->inquiryAnalytics->recordQuestion($user, $lesson, $stage, $evidenceCount);
+            }
+
             return response()->json([
                 'success' => true,
                 'stage' => $stage,
                 'answer' => $answer,
+                'bloom_level' => $bloom['bloom_level'],
+                'bloom_confidence' => $bloom['bloom_confidence'],
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -104,5 +166,92 @@ class AIChatController extends Controller
                 'message' => 'AI service error: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function handleCheckpoint(Request $request, Lesson $lesson, string $stage, string $intent)
+    {
+        $user = $request->user();
+
+        $latestMessage = AiChatMessage::query()
+            ->where('user_id', $user->id)
+            ->where('lesson_id', $lesson->id)
+            ->where('stage', $stage)
+            ->latest('id')
+            ->first();
+
+        if ($intent === 'start') {
+            $payload = $this->checkpointService->generateCheckpointQuestion($lesson, $stage, $user);
+
+            $chat = AiChatMessage::create([
+                'user_id' => $user->id,
+                'lesson_id' => $lesson->id,
+                'stage' => $stage,
+                'question' => '__checkpoint_start__',
+                'answer' => $payload['answer'],
+                'engage_status' => $payload['engage_status'],
+                'context_source' => $payload['context_source'],
+                'retrieval_mode' => $payload['retrieval_mode'],
+                'turn_index' => 1,
+                'parent_message_id' => $latestMessage?->id,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'stage' => $stage,
+                'intent' => 'start',
+                'answer' => $chat->answer,
+                'engage_status' => $chat->engage_status,
+            ]);
+        }
+
+        // intent === 'answer'
+        $payload = $this->checkpointService->evaluateCheckpointAnswer($lesson, $user, $request->question, $stage);
+        $bloom = $this->classifyLearnerQuestion($request->question, $stage, $intent);
+
+        $chat = AiChatMessage::create([
+            'user_id' => $user->id,
+            'lesson_id' => $lesson->id,
+            'stage' => $stage,
+            'question' => $request->question,
+            'answer' => $payload['answer'],
+            'classification' => $payload['classification'],
+            'bloom_level' => $bloom['bloom_level'],
+            'bloom_confidence' => $bloom['bloom_confidence'],
+            'confidence' => $payload['confidence'],
+            'feedback_text' => $payload['feedback_text'],
+            'follow_up_question' => $payload['follow_up_question'],
+            'engage_status' => $payload['engage_status'],
+            'completion_reason' => $payload['completion_reason'],
+            'turn_index' => $payload['turn_index'],
+            'context_source' => $payload['context_source'],
+            'retrieval_mode' => $payload['retrieval_mode'],
+            'parent_message_id' => $latestMessage?->id,
+        ]);
+
+        $evidenceCount = $this->inquiryAnalytics->deriveEvidenceCountFromResponse((string) ($payload['answer'] ?? ''));
+        $this->inquiryAnalytics->recordQuestion($user, $lesson, $stage, $evidenceCount);
+
+        return response()->json([
+            'success' => true,
+            'stage' => $stage,
+            'intent' => 'answer',
+            'answer' => $chat->answer,
+            'classification' => $chat->classification,
+            'bloom_level' => $chat->bloom_level,
+            'bloom_confidence' => $chat->bloom_confidence,
+            'confidence' => $chat->confidence,
+            'engage_status' => $chat->engage_status,
+            'follow_up_question' => $chat->follow_up_question,
+            'full_answer' => $payload['full_answer'] ?? null,
+        ]);
+    }
+
+    private function classifyLearnerQuestion(string $question, string $stage, string $intent): array
+    {
+        if ($intent === 'start') {
+            return ['bloom_level' => null, 'bloom_confidence' => null];
+        }
+
+        return $this->bloomClassifier->classify($question, $stage);
     }
 }

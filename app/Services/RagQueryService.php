@@ -4,9 +4,11 @@ namespace App\Services;
 
 use App\Models\Lesson;
 use App\Models\LessonEmbedding;
+use App\Services\AiPerformanceLogger;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use LLPhant\Embeddings\VectorStores\FileSystem\FileSystemVectorStore;
 use LLPhant\Embeddings\Document;
 
@@ -17,6 +19,8 @@ class RagQueryService
     private OllamaEmbeddingGenerator $embeddingGenerator;
     private string $llmModel;
     private string $ollamaUrl;
+    /** Tracks the chunk count set by retrieveContext() so callLlm() logContext can include it. */
+    private int $lastChunkCount = 0;
 
     public function __construct()
     {
@@ -44,7 +48,10 @@ class RagQueryService
         string $query,
         int $lessonId,
         ?string $stage = 'engage',
-        int $topK = 5
+        ?string $userName = null,
+        int $topK = 5,
+        string $memoryContext = '',
+        bool $memoryEnabled = false
     ): string {
         // 1. Load the lesson and validate it has embeddings
         $lesson = Lesson::findOrFail($lessonId);
@@ -77,12 +84,21 @@ class RagQueryService
         // 3. Retrieve relevant context from the vector store
         $context = $this->retrieveContext($lesson, $query, $topK);
 
-        if (empty($context)) {
-            return 'Not in context.';
+        if (empty($context) && (!$memoryEnabled || trim($memoryContext) === '')) {
+            return $this->outOfContextResponse($userName, false);
         }
 
         // 4. Generate response using stage-specific strict prompt
-        $answer = $this->generateLlmResponse($query, $context, $stage);
+        $logContext = [
+            'caller'           => 'rag_query',
+            'lesson_id'        => $lessonId,
+            'stage'            => $stage,
+            'question_snippet' => $query,
+            'user_name'        => $userName,
+            'context_chunks'   => $this->lastChunkCount,
+            'memory_enabled'   => $memoryEnabled,
+        ];
+        $answer = $this->generateLlmResponse($query, $context, $stage, $userName, $memoryContext, $memoryEnabled, $logContext);
 
         Log::info('[RAG Query] Response generated', [
             'lesson_id' => $lessonId,
@@ -120,9 +136,11 @@ class RagQueryService
                 $context .= trim($doc->content) . "\n\n";
             }
 
+            $this->lastChunkCount = count($similarDocuments);
+
             Log::debug('[RAG Query] Context retrieved', [
                 'lesson_id' => $lesson->id,
-                'chunks_found' => count($similarDocuments),
+                'chunks_found' => $this->lastChunkCount,
                 'context_length' => strlen($context),
             ]);
 
@@ -158,10 +176,66 @@ class RagQueryService
     }
 
     /**
-     * Generic Ollama LLM call for internal and cross-service use.
+     * Retrieve context from one or more vector store files.
+     * Each store is queried independently, then snippets are combined.
+     *
+     * @param string[] $vectorStorePaths
      */
-    public function callLlm(string $prompt, string $system, int $maxTokens = 80): string
+    public function retrieveContextFromVectorStoresSafe(array $vectorStorePaths, string $query, int $topKPerStore = 2, int $maxContexts = 4): string
     {
+        $paths = array_values(array_unique(array_filter($vectorStorePaths, fn ($path) => is_string($path) && $path !== '' && File::exists($path))));
+
+        if ($paths === []) {
+            return '';
+        }
+
+        try {
+            $queryDoc = new Document();
+            $queryDoc->content = $query;
+            $embeddedQuery = $this->embeddingGenerator->embedDocument($queryDoc);
+
+            $contexts = [];
+
+            foreach ($paths as $path) {
+                $vectorStore = new FileSystemVectorStore($path);
+                $documents = $vectorStore->similaritySearch($embeddedQuery->embedding, $topKPerStore);
+
+                foreach ($documents as $document) {
+                    $snippet = trim((string) $document->content);
+                    if ($snippet === '') {
+                        continue;
+                    }
+
+                    $contexts[] = $snippet;
+
+                    if (count($contexts) >= $maxContexts) {
+                        break 2;
+                    }
+                }
+            }
+
+            $this->lastChunkCount = count($contexts);
+
+            return trim(implode("\n\n", $contexts));
+        } catch (\Throwable $e) {
+            Log::warning('[RAG Query] Multi-store context retrieval failed', [
+                'error' => $e->getMessage(),
+                'stores' => count($paths),
+                'query_snippet' => Str::limit($query, 100),
+            ]);
+
+            return '';
+        }
+    }
+
+    /**
+     * Generic Ollama LLM call for internal and cross-service use.
+     *
+     * @param array $logContext Optional performance-log metadata (caller, lesson_id, stage, etc.)
+     */
+    public function callLlm(string $prompt, string $system, int $maxTokens = 80, array $logContext = []): string
+    {
+        $callStart = microtime(true);
         try {
             $response = Http::timeout(180)
                 ->post("{$this->ollamaUrl}/api/generate", [
@@ -175,7 +249,14 @@ class RagQueryService
                     ],
                 ]);
 
+            $wallClockMs = (microtime(true) - $callStart) * 1000;
+
             if ($response->failed()) {
+                AiPerformanceLogger::logError(
+                    $wallClockMs,
+                    array_merge(['caller' => 'rag_query', 'model_name' => $this->llmModel], $logContext),
+                    "Ollama API request failed: {$response->status()}"
+                );
                 throw new \RuntimeException(
                     "Ollama API request failed: {$response->body()}"
                 );
@@ -188,6 +269,12 @@ class RagQueryService
                     'Unexpected response format from Ollama'
                 );
             }
+
+            AiPerformanceLogger::log(
+                $data,
+                $wallClockMs,
+                array_merge(['caller' => 'rag_query', 'model_name' => $this->llmModel], $logContext)
+            );
 
             return trim($data['response']);
 
@@ -225,19 +312,34 @@ class RagQueryService
     private function generateLlmResponse(
         string $query,
         string $context,
-        ?string $stage = 'engage'
+        ?string $stage = 'engage',
+        ?string $userName = null,
+        string $memoryContext = '',
+        bool $memoryEnabled = false,
+        array $logContext = []
     ): string {
-        $system = $this->buildStageSystemPrompt($stage ?? 'engage');
+        $system = $this->buildStageSystemPrompt($stage ?? 'engage', $userName, $memoryEnabled);
 
-        $userPrompt = "<CONTEXT>\n{$context}\n</CONTEXT>\n\nQuestion: {$query}";
+        $promptSections = [];
 
-        return $this->callLlm($userPrompt, $system, 80);
+        if ($context !== '') {
+            $promptSections[] = "<LESSON_CONTEXT>\n{$context}\n</LESSON_CONTEXT>";
+        }
+
+        if ($memoryEnabled && $memoryContext !== '') {
+            $promptSections[] = "<MEMORY_CONTEXT>\n{$memoryContext}\n</MEMORY_CONTEXT>";
+        }
+
+        $promptSections[] = "Question: {$query}";
+        $userPrompt = implode("\n\n", $promptSections);
+
+        return $this->callLlm($userPrompt, $system, 80, $logContext);
     }
 
     /**
      * Build strict, stage-specific system prompts.
      */
-    private function buildStageSystemPrompt(string $stage): string
+    private function buildStageSystemPrompt(string $stage, ?string $userName = null, bool $memoryEnabled = false): string
     {
         $normalizedStage = in_array($stage, self::STAGES, true) ? $stage : 'engage';
 
@@ -250,11 +352,25 @@ class RagQueryService
             default => 'Focus on accurate, concise instructional support.',
         };
 
+        $studentName = $userName ? ucfirst(strtolower($userName)) : 'the student';
+        $memoryRule = $memoryEnabled
+            ? 'Use LESSON_CONTEXT first. You may also use MEMORY_CONTEXT from the same student, including prior lessons, when it clearly helps answer the question.'
+            : 'Answer strictly from LESSON_CONTEXT. Ignore any implied memory outside the current lesson.';
+
         return "You are assisting the '{$normalizedStage}' stage of a lesson. {$stageDirective}\n\n" .
-            "<CONTEXT>\n{{retrieved_chunks}}\n</CONTEXT>\n\n" .
-            "You must answer ONLY using the information inside <CONTEXT>.\n" .
-            "If the answer is not present, say: \"Not in context.\"\n" .
+            "The student is {$studentName}. Use the name only when it feels natural.\n" .
+            "{$memoryRule}\n" .
+            "If the available context does not contain the answer, say: \"Your question is out of context for this lesson.\"\n" .
             "Keep the answer under 30 words.";
+    }
+
+    private function outOfContextResponse(?string $userName, bool $includeName = true): string
+    {
+        if ($includeName && $userName) {
+            return "{$userName}, your question is out of context for this lesson.";
+        }
+
+        return 'Your question is out of context for this lesson.';
     }
 
     /**

@@ -11,7 +11,7 @@ class LessonStageContent extends Model
 
     protected $table = 'lesson_stage_contents';
 
-    protected $fillable = ['lesson_id', 'stage', 'content_type', 'content'];
+    protected $fillable = ['lesson_id', 'stage', 'content_type', 'activity_mode', 'content'];
 
     public function lesson()
     {

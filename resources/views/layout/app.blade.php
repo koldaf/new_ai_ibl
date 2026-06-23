@@ -442,10 +442,23 @@
 </head>
 <body>
 
+    @php
+        $dashboardRoute = route('student.lessons.index');
+        $dashboardRouteName = 'student.lessons.index';
+
+        if (auth()->check() && auth()->user()->hasRole('admin')) {
+            $dashboardRoute = route('admin.dashboard');
+            $dashboardRouteName = 'admin.dashboard';
+        } elseif (auth()->check() && auth()->user()->hasRole('teacher')) {
+            $dashboardRoute = route('teacher.dashboard');
+            $dashboardRouteName = 'teacher.dashboard';
+        }
+    @endphp
+
     {{-- ═══ SIDEBAR ═══════════════════════════════════════ --}}
     <aside class="sidebar" id="sidebar">
 
-        <a href="{{ auth()->user()->hasRole('admin') ? route('admin.dashboard') : route('student.lessons.index') }}" class="sidebar-brand">
+        <a href="{{ $dashboardRoute }}" class="sidebar-brand">
             <div class="brand-icon"><i class="bi bi-cpu"></i></div>
             <span class="brand-text">AI-IBL</span>
         </a>
@@ -455,8 +468,8 @@
             {{-- Main --}}
             <div class="nav-label">Main</div>
 
-            <a href="{{ auth()->user()->hasRole('admin') ? route('admin.dashboard') : route('student.lessons.index') }}"
-               class="nav-item-link {{ request()->routeIs(auth()->user()->hasRole('admin') ? 'admin.dashboard' : 'student.lessons.index') ? 'active' : '' }}">
+                <a href="{{ $dashboardRoute }}"
+                    class="nav-item-link {{ request()->routeIs($dashboardRouteName) ? 'active' : '' }}">
                 <i class="bi bi-grid-1x2"></i>
                 <span>Dashboard</span>
             </a>
@@ -465,10 +478,16 @@
             {{-- Users --}}
             <div class="nav-label mt-2">Admin Role</div>
 
-            <a href="#"
-               class="nav-item-link {{ request()->routeIs('users.*') ? 'active' : '' }}">
+            <a href="{{ route('admin.users.index') }}"
+               class="nav-item-link {{ request()->routeIs('admin.users.*') ? 'active' : '' }}">
                 <i class="bi bi-people"></i>
                 <span>Users</span>
+            </a>
+
+            <a href="{{ route('admin.settings.index') }}"
+               class="nav-item-link {{ request()->routeIs('admin.settings.*') ? 'active' : '' }}">
+                <i class="bi bi-gear"></i>
+                <span>Settings</span>
             </a>
 
             {{-- Lesson Setup --}}
@@ -497,6 +516,13 @@
                     </a>
                 </div>
             </div>
+
+            {{-- AI Performance Monitor --}}
+            <a href="{{ route('admin.ai-performance.index') }}"
+               class="nav-item-link {{ request()->routeIs('admin.ai-performance.*') ? 'active' : '' }}">
+                <i class="bi bi-speedometer2"></i>
+                <span>AI Monitor</span>
+            </a>
             @endif
             @if(auth()->user()->role === 'student')
                 {{-- My Lessons --}}
@@ -505,6 +531,14 @@
                        class="nav-item-link {{ request()->routeIs('student.lessons.index') ? 'active' : '' }}">
                         <i class="bi bi-list-ul"></i>
                         <span>Lesson List</span>
+                </a>
+            @endif
+            @if(auth()->user()->role === 'teacher')
+                <div class="nav-label mt-2">Teaching</div>
+                <a href="{{ route('teacher.dashboard') }}"
+                   class="nav-item-link {{ request()->routeIs('teacher.dashboard') ? 'active' : '' }}">
+                    <i class="bi bi-graph-up"></i>
+                    <span>Progress Dashboard</span>
                 </a>
             @endif
         </nav>
@@ -561,7 +595,7 @@
                         </a>
                     </li>
                     <li>
-                        <a class="dropdown-item" href="#">
+                        <a class="dropdown-item" href="{{ auth()->user()->role === 'admin' ? route('admin.settings.index') : '#' }}">
                             <i class="bi bi-gear"></i> Settings
                         </a>
                     </li>

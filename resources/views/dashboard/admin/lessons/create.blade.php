@@ -25,6 +25,17 @@
         </div>
 
         <div class="mb-3">
+            <label for="teacher_id" class="form-label">Teacher Owner</label>
+            <select class="form-control @error('teacher_id') is-invalid @enderror" id="teacher_id" name="teacher_id">
+                <option value="">Unassigned</option>
+                @foreach($teachers as $teacher)
+                    <option value="{{ $teacher->id }}" {{ (string) old('teacher_id') === (string) $teacher->id ? 'selected' : '' }}>{{ $teacher->name }}</option>
+                @endforeach
+            </select>
+            @error('teacher_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
+        </div>
+
+        <div class="mb-3">
             <label for="description" class="form-label">Description</label>
             <textarea class="form-control wysiwyg-editor @error('description') is-invalid @enderror" id="description" name="description" rows="3">{{ old('description') }}</textarea>
             @error('description') <div class="invalid-feedback">{{ $message }}</div> @enderror

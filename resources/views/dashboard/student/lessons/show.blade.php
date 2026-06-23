@@ -33,10 +33,52 @@
     <div class="tab-content p-3 border border-top-0 bg-white" id="lessonTabsContent">
         @foreach($stages as $index => $stage)
         <div class="tab-pane fade {{ $index == 0 ? 'show active' : '' }}" id="{{ $stage }}" role="tabpanel" aria-labelledby="{{ $stage }}-tab">
+            @if($stage === 'explain' && $engageMode === 'mcq' && $engageMcqAttempt?->resolved_feedback)
+                <div class="alert alert-warning border-start border-4 border-warning">
+                    <strong>From your Engage checkpoint:</strong>
+                    <div class="mt-2">{!! nl2br(e($engageMcqAttempt->resolved_feedback)) !!}</div>
+                </div>
+            @endif
+
             <!-- Stage Content -->
             @if($stageData[$stage]['content'] && $stageData[$stage]['content']->content)
                 <div class="mb-4">
+                    @if($stage === 'explore')
+                        @php
+                            $exploreContentCompletionKey = 'stage_content-' . $stageData[$stage]['content']->id;
+                            $exploreContentCompleted = $exploreActivityCompletions->has($exploreContentCompletionKey);
+                        @endphp
+                        <div class="alert alert-light border d-flex align-items-center justify-content-between gap-3 explore-activity-row">
+                            <div>
+                                <strong>Explore Activity:</strong> Review the lesson content for this stage.
+                            </div>
+                            <div class="form-check m-0">
+                                <input
+                                    class="form-check-input explore-activity-checkbox"
+                                    type="checkbox"
+                                    id="explore-content-activity-{{ $stageData[$stage]['content']->id }}"
+                                    data-stage="explore"
+                                    data-activity-type="stage_content"
+                                    data-activity-reference-id="{{ $stageData[$stage]['content']->id }}"
+                                    {{ $exploreContentCompleted ? 'checked' : '' }}
+                                    {{ $progress->explore_completed ? 'disabled' : '' }}
+                                >
+                                <label class="form-check-label" for="explore-content-activity-{{ $stageData[$stage]['content']->id }}">
+                                    Mark reviewed
+                                </label>
+                            </div>
+                        </div>
+                    @endif
                     {!! $stageData[$stage]['content']->content !!}
+                </div>
+            @endif
+
+            @if($stage === 'explore' && $exploreActivities->count() > 0)
+                <div class="alert alert-info d-flex align-items-center justify-content-between gap-3">
+                    <div>
+                        Complete each Explore activity before marking the stage complete.
+                    </div>
+                    <strong><span id="explore-progress-count">{{ $exploreCompletedCount }}</span>/{{ $exploreActivities->count() }} done</strong>
                 </div>
             @endif
 
@@ -66,6 +108,27 @@
                                     @endif
                                     @if($media->description)
                                         <p>{!! $media->description !!}</p>
+                                    @endif
+                                    @if($stage === 'explore')
+                                        @php
+                                            $exploreMediaCompletionKey = 'media-' . $media->id;
+                                            $exploreMediaCompleted = $exploreActivityCompletions->has($exploreMediaCompletionKey);
+                                        @endphp
+                                        <div class="form-check border-top pt-3 mt-3">
+                                            <input
+                                                class="form-check-input explore-activity-checkbox"
+                                                type="checkbox"
+                                                id="explore-media-activity-{{ $media->id }}"
+                                                data-stage="explore"
+                                                data-activity-type="media"
+                                                data-activity-reference-id="{{ $media->id }}"
+                                                {{ $exploreMediaCompleted ? 'checked' : '' }}
+                                                {{ $progress->explore_completed ? 'disabled' : '' }}
+                                            >
+                                            <label class="form-check-label" for="explore-media-activity-{{ $media->id }}">
+                                                Mark this activity complete
+                                            </label>
+                                        </div>
                                     @endif
                                 </div>
                             </div>
@@ -118,7 +181,7 @@
                 </div>
             @endif
 
-            @if($stage === 'engage')
+            @if($stage === 'engage' && $engageMode === 'chat')
                 <div class="card mb-4 shadow-sm border-0">
                     <div class="card-header bg-light d-flex justify-content-between align-items-center">
                         <span class="fw-semibold">Engage Discussion</span>
@@ -172,17 +235,202 @@
                 </div>
             @endif
 
+            @if($stage === 'engage' && $engageMode === 'mcq' && $engageMcqQuestion)
+                <div class="card mb-4 shadow-sm border-0">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <span class="fw-semibold">Engage Checkpoint</span>
+                        <span class="badge {{ $progress->engage_completed ? 'bg-success' : 'bg-secondary' }}" id="engage-status-badge">
+                            {{ $progress->engage_completed ? 'Complete' : 'Waiting for response' }}
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        <p class="fw-semibold mb-3">{{ $engageMcqQuestion->question }}</p>
+
+                        @if(!$progress->engage_completed)
+                            <form id="engage-mcq-form">
+                                @csrf
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="selected_option" value="a" id="engage_option_a">
+                                    <label class="form-check-label" for="engage_option_a">A. {{ $engageMcqQuestion->option_a }}</label>
+                                </div>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="selected_option" value="b" id="engage_option_b">
+                                    <label class="form-check-label" for="engage_option_b">B. {{ $engageMcqQuestion->option_b }}</label>
+                                </div>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="selected_option" value="c" id="engage_option_c">
+                                    <label class="form-check-label" for="engage_option_c">C. {{ $engageMcqQuestion->option_c }}</label>
+                                </div>
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="radio" name="selected_option" value="d" id="engage_option_d">
+                                    <label class="form-check-label" for="engage_option_d">D. {{ $engageMcqQuestion->option_d }}</label>
+                                </div>
+                                <button class="btn btn-primary" type="submit">Submit Checkpoint</button>
+                            </form>
+                        @endif
+
+                        <div id="engage-mcq-result" class="{{ $engageMcqAttempt ? 'mt-3' : 'mt-0' }}">
+                            @if($engageMcqAttempt)
+                                <div class="alert {{ $engageMcqAttempt->is_correct ? 'alert-success' : 'alert-warning' }} mb-0">
+                                    <div><strong>Your choice:</strong> {{ strtoupper($engageMcqAttempt->selected_option) }}</div>
+                                    <div class="mt-2">{!! nl2br(e($engageMcqAttempt->resolved_feedback ?? '')) !!}</div>
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+            @endif
+
+            @php
+                $stageAnalytic = $phaseAnalyticsByStage->get($stage);
+                $reflectionText = old('reflection_text', $stageAnalytic?->reflection_text ?? '');
+            @endphp
+            <div class="card mb-4 shadow-sm border-0">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold">Inquiry Reflection ({{ ucfirst($stage) }})</span>
+                    <span class="badge bg-secondary" id="reflection-quality-badge-{{ $stage }}">
+                        Quality: {{ is_null($stageAnalytic?->reflection_quality_final) ? 'Not scored' : $stageAnalytic->reflection_quality_final . '/100' }}
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <div class="small text-muted">Time spent</div>
+                            <div class="fw-semibold" id="stage-time-{{ $stage }}">{{ round(((int) ($stageAnalytic?->time_spent_seconds ?? 0)) / 60, 1) }} min</div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="small text-muted">Questions generated</div>
+                            <div class="fw-semibold">{{ (int) ($stageAnalytic?->questions_generated ?? 0) }}</div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="small text-muted">Evidence sources consulted</div>
+                            <div class="fw-semibold">{{ (int) ($stageAnalytic?->evidence_sources_consulted ?? 0) }}</div>
+                        </div>
+                    </div>
+
+                    <div class="mb-2">
+                        <label for="reflection-input-{{ $stage }}" class="form-label">What did you learn in this phase?</label>
+                        <textarea
+                            id="reflection-input-{{ $stage }}"
+                            class="form-control reflection-input"
+                            data-stage="{{ $stage }}"
+                            rows="4"
+                            placeholder="Write a short reflection, mention your evidence and what you would improve next time..."
+                        >{{ $reflectionText }}</textarea>
+                    </div>
+                    <button
+                        type="button"
+                        class="btn btn-outline-primary reflection-save-button"
+                        data-stage="{{ $stage }}"
+                        {{ $progress->{$stage.'_completed'} ? 'disabled' : '' }}
+                    >
+                        Save Reflection
+                    </button>
+                    <div class="small text-muted mt-2" id="reflection-save-status-{{ $stage }}">
+                        @if($stageAnalytic?->updated_at)
+                            Last updated {{ $stageAnalytic->updated_at->diffForHumans() }}
+                        @else
+                            Not saved yet
+                        @endif
+                    </div>
+                </div>
+            </div>
+
             <!-- Mark as Complete Button (except evaluate if not done yet) -->
             @if(!$progress->{$stage.'_completed'} && $stage != 'evaluate')
                 @if($stage === 'engage')
-                    <div class="mb-2 small text-muted" id="engage-complete-helper">
-                        @if($canMarkEngageComplete)
-                            Denzy has marked this Engage discussion as ready for completion.
-                        @else
-                            Continue the Engage discussion until Denzy marks it ready for completion.
-                        @endif
+                    @if($engageMode === 'chat')
+                        <div class="mb-2 small text-muted" id="engage-complete-helper">
+                            @if($canMarkEngageComplete)
+                                Denzy has marked this Engage discussion as ready for completion.
+                            @else
+                                Continue the Engage discussion until Denzy marks it ready for completion.
+                            @endif
+                        </div>
+                        <button class="btn btn-success mark-complete" data-stage="{{ $stage }}" id="engage-complete-button" {{ $canMarkEngageComplete ? '' : 'disabled' }}>
+                            Mark {{ ucfirst($stage) }} as Complete
+                        </button>
+                    @else
+                        <p class="text-info mb-0">Submit the checkpoint above to complete the Engage stage.</p>
+                    @endif
+                @elseif($stage === 'explore')
+                    {{-- Explore checkpoint widget --}}
+                    @php $stageCheckpointDone = $checkpointStatus['explore'] ?? false; @endphp
+                    <div class="card mb-4 shadow-sm border-0" id="explore-checkpoint-card">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <span class="fw-semibold"><i class="fas fa-robot me-2 text-secondary"></i>Explore Checkpoint</span>
+                            <span class="badge {{ $stageCheckpointDone ? 'bg-success' : 'bg-secondary' }}" id="explore-checkpoint-badge">
+                                {{ $stageCheckpointDone ? 'Checkpoint passed' : 'In progress' }}
+                            </span>
+                        </div>
+                        <div class="card-body">
+                            <div id="explore-checkpoint-messages" class="border rounded bg-light p-3 mb-3" style="max-height: 340px; overflow-y: auto;">
+                                @if(!$stageCheckpointDone)
+                                    <div class="alert alert-info mb-0" id="explore-checkpoint-placeholder">
+                                        Denzy will post a reflection question here to assess your understanding.
+                                    </div>
+                                @else
+                                    <div class="alert alert-success mb-0">You have passed the Explore checkpoint.</div>
+                                @endif
+                            </div>
+                            @if(!$stageCheckpointDone && !$progress->explore_completed)
+                                <form id="explore-checkpoint-form">
+                                    @csrf
+                                    <div class="mb-3">
+                                        <label for="explore-checkpoint-input" class="form-label">Your answer</label>
+                                        <textarea id="explore-checkpoint-input" class="form-control" rows="3" placeholder="Type your answer here..." required disabled></textarea>
+                                    </div>
+                                    <button class="btn btn-primary" type="submit" id="explore-checkpoint-submit" disabled>Send Answer</button>
+                                </form>
+                            @endif
+                        </div>
                     </div>
-                    <button class="btn btn-success mark-complete" data-stage="{{ $stage }}" id="engage-complete-button" {{ $canMarkEngageComplete ? '' : 'disabled' }}>
+
+                    @if($exploreActivities->count() > 0)
+                        <div class="mb-2 small text-muted" id="explore-complete-helper">
+                            {{ ($allExploreActivitiesCompleted && $stageCheckpointDone) ? 'All Explore activities and checkpoint are complete.' : 'Finish all Explore activities and the checkpoint before marking this stage as complete.' }}
+                        </div>
+                    @endif
+                    <button class="btn btn-success mark-complete" data-stage="{{ $stage }}" id="explore-complete-button" {{ ($allExploreActivitiesCompleted && $stageCheckpointDone) ? '' : 'disabled' }}>
+                        Mark {{ ucfirst($stage) }} as Complete
+                    </button>
+                @elseif(in_array($stage, ['explain', 'elaborate']))
+                    {{-- Checkpoint widget for explain / elaborate --}}
+                    @php $stageCheckpointDone = $checkpointStatus[$stage] ?? false; @endphp
+                    <div class="card mb-4 shadow-sm border-0" id="{{ $stage }}-checkpoint-card">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <span class="fw-semibold"><i class="fas fa-robot me-2 text-secondary"></i>{{ ucfirst($stage) }} Checkpoint</span>
+                            <span class="badge {{ $stageCheckpointDone ? 'bg-success' : 'bg-secondary' }}" id="{{ $stage }}-checkpoint-badge">
+                                {{ $stageCheckpointDone ? 'Checkpoint passed' : 'In progress' }}
+                            </span>
+                        </div>
+                        <div class="card-body">
+                            <div id="{{ $stage }}-checkpoint-messages" class="border rounded bg-light p-3 mb-3" style="max-height: 340px; overflow-y: auto;">
+                                @if(!$stageCheckpointDone)
+                                    <div class="alert alert-info mb-0" id="{{ $stage }}-checkpoint-placeholder">
+                                        Denzy will post a reflection question here to assess your understanding.
+                                    </div>
+                                @else
+                                    <div class="alert alert-success mb-0">You have passed the {{ ucfirst($stage) }} checkpoint.</div>
+                                @endif
+                            </div>
+                            @if(!$stageCheckpointDone && !$progress->{$stage.'_completed'})
+                                <form id="{{ $stage }}-checkpoint-form">
+                                    @csrf
+                                    <div class="mb-3">
+                                        <label for="{{ $stage }}-checkpoint-input" class="form-label">Your answer</label>
+                                        <textarea id="{{ $stage }}-checkpoint-input" class="form-control" rows="3" placeholder="Type your answer here..." required disabled></textarea>
+                                    </div>
+                                    <button class="btn btn-primary" type="submit" id="{{ $stage }}-checkpoint-submit" disabled>Send Answer</button>
+                                </form>
+                            @endif
+                        </div>
+                    </div>
+
+                    <div class="mb-2 small text-muted" id="{{ $stage }}-complete-helper">
+                        {{ $stageCheckpointDone ? 'Checkpoint passed. You may now mark this stage complete.' : 'Complete the checkpoint discussion above before marking this stage as complete.' }}
+                    </div>
+                    <button class="btn btn-success mark-complete" data-stage="{{ $stage }}" id="{{ $stage }}-complete-button" {{ $stageCheckpointDone ? '' : 'disabled' }}>
                         Mark {{ ucfirst($stage) }} as Complete
                     </button>
                 @else
@@ -199,8 +447,8 @@
 </div>
 
 <!-- Floating AI Chat Button -->
-<div id="ai-chat-widget" style="position: fixed; top: 80%; left: 90%; z-index: 1000;">
-    <div style="width: 300px; position: absolute; top: -480px; left: -220px; overflow-x:hidden; display:none" id="ai-chat-container" class="card alert-danger border-2 rounded">
+<div id="ai-chat-widget" class="denzy-widget">
+    <div id="ai-chat-container" class="card alert-danger border-2 rounded denzy-widget-panel" aria-hidden="true">
         <div class="bg-dark text-light text-center h6 m-0 p-3 border-bottom">
             <i class="fas fa-robot fa-2x me-3"></i>
             <strong>Denzy </strong>
@@ -219,38 +467,11 @@
             </div>
     </div>
     
-    <button id="ai-chat-button" class="btn btn-dark rounded-circle" style="width: 60px; height: 60px;">
+    <button id="ai-chat-button" class="btn btn-dark rounded-circle denzy-widget-button" aria-expanded="false" aria-controls="ai-chat-container">
         <i class="fas fa-robot"></i>
     </button>
 </div>
 
-<!-- Floating AI Chat Button ->
-<button id="ai-chat-button" class="btn btn-primary rounded-circle position-fixed bottom-0 end-0 m-4" style="width: 60px; height: 60px; z-index: 1000;">
-    <i class="fas fa-robot"></i>
-</button>
-
- AI Chat Modal ->
-<div class="modal fade" id="aiChatModal" tabindex="-1" aria-labelledby="aiChatModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="aiChatModalLabel">AI Tutor (Powered by OLLAMA)</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body" style="height: 400px; overflow-y: auto;" id="chat-messages">
-                <div class="alert alert-info">Ask me anything about this lesson!</div>
-            </div>
-            <div class="modal-footer">
-                <form id="chat-form" class="w-100">
-                    <div class="input-group">
-                        <input type="text" id="chat-input" class="form-control" placeholder="Type your question..." required>
-                        <button class="btn btn-primary" type="submit">Send</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-</div-->
 @endsection
 
 @push('scripts')
@@ -258,6 +479,7 @@
 <script>
 $(document).ready(function() {
     var engageStarted = {{ $engageMessages->isNotEmpty() ? 'true' : 'false' }};
+    var engageMode = '{{ $engageMode }}';
 
     function activeStage() {
         return $('.nav-link.active').data('bs-target').substring(1);
@@ -276,13 +498,23 @@ $(document).ready(function() {
     }
 
     function updateDenzyVisibility() {
-        if (activeStage() === 'engage') {
-            $('#ai-chat-container').hide();
-            $('#ai-chat-widget').hide();
-            return;
-        }
-
         $('#ai-chat-widget').show();
+    }
+
+    function touchStageAnalytics(stage) {
+        $.ajax({
+            url: '{{ route("student.lessons.stages.analytics.touch", ["lesson" => $lesson->id, "stage" => "_stage_"]) }}'.replace('_stage_', stage),
+            method: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}'
+            },
+            success: function(response) {
+                if (response && typeof response.time_spent_seconds !== 'undefined') {
+                    var timeMinutes = (parseInt(response.time_spent_seconds, 10) / 60).toFixed(1);
+                    $('#stage-time-' + stage).text(timeMinutes + ' min');
+                }
+            }
+        });
     }
 
     function updateEngageCompletionState(canComplete) {
@@ -304,6 +536,28 @@ $(document).ready(function() {
 
         helper.text('Continue the Engage discussion until Denzy marks it ready for completion.');
         badge.text('Discussion in progress').removeClass('bg-success bg-warning').addClass('bg-secondary');
+    }
+
+    function updateExploreCompletionState(completedCount, totalCount) {
+        var helper = $('#explore-complete-helper');
+        var button = $('#explore-complete-button');
+        var allCompleted = totalCount === 0 || completedCount >= totalCount;
+
+        $('#explore-progress-count').text(completedCount);
+
+        if (!button.length) {
+            return;
+        }
+
+        button.prop('disabled', !allCompleted);
+
+        if (!helper.length) {
+            return;
+        }
+
+        helper.text(allCompleted
+            ? 'All Explore activities are complete. You can now mark this stage as complete.'
+            : 'Finish all Explore activities before you mark this stage as complete.');
     }
 
     function appendEngageStudentMessage(text) {
@@ -383,7 +637,7 @@ $(document).ready(function() {
     }
 
     function requestEngageStart() {
-        if (engageStarted) {
+        if (engageMode !== 'chat' || engageStarted) {
             return;
         }
 
@@ -427,6 +681,9 @@ $(document).ready(function() {
                 if (stage === 'engage') {
                     $('#engage-chat-form :input').prop('disabled', true);
                 }
+                if (stage === 'explore') {
+                    $('.explore-activity-checkbox').prop('disabled', true);
+                }
                 // Update tab style
                 $('#' + stage + '-tab').addClass('bg-success text-white');
                 // Optionally show success message
@@ -435,6 +692,66 @@ $(document).ready(function() {
             error: function(xhr) {
                 console.error(xhr);
                 alert('Error: ' + xhr.responseJSON.error);
+            }
+        });
+    });
+
+    $('.explore-activity-checkbox').on('change', function() {
+        var checkbox = $(this);
+        var completed = checkbox.is(':checked');
+
+        $.ajax({
+            url: '{{ route("student.lessons.stages.activities.complete", ["lesson" => $lesson->id, "stage" => "_stage_"]) }}'.replace('_stage_', checkbox.data('stage')),
+            method: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}',
+                activity_type: checkbox.data('activity-type'),
+                activity_reference_id: checkbox.data('activity-reference-id'),
+                completed: completed ? 1 : 0
+            },
+            success: function(response) {
+                updateExploreCompletionState(response.completed_count, response.total_count);
+            },
+            error: function(xhr) {
+                checkbox.prop('checked', !completed);
+                alert((xhr.responseJSON && xhr.responseJSON.error) ? xhr.responseJSON.error : 'Unable to update Explore activity.');
+            }
+        });
+    });
+
+    $('.reflection-save-button').on('click', function() {
+        var button = $(this);
+        var stage = button.data('stage');
+        var text = $('#reflection-input-' + stage).val();
+
+        if (!text || text.trim().length < 10) {
+            alert('Please write at least 10 characters before saving your reflection.');
+            return;
+        }
+
+        button.prop('disabled', true).text('Saving...');
+
+        $.ajax({
+            url: '{{ route("student.lessons.stages.reflection.save", ["lesson" => $lesson->id, "stage" => "_stage_"]) }}'.replace('_stage_', stage),
+            method: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}',
+                reflection_text: text
+            },
+            success: function(response) {
+                $('#reflection-save-status-' + stage).text('Saved just now');
+                if (response && response.reflection_quality_final !== null) {
+                    $('#reflection-quality-badge-' + stage).text('Quality: ' + response.reflection_quality_final + '/100');
+                }
+            },
+            error: function(xhr) {
+                var message = (xhr.responseJSON && (xhr.responseJSON.message || xhr.responseJSON.error))
+                    ? (xhr.responseJSON.message || xhr.responseJSON.error)
+                    : 'Unable to save reflection.';
+                alert(message);
+            },
+            complete: function() {
+                button.prop('disabled', false).text('Save Reflection');
             }
         });
     });
@@ -456,20 +773,25 @@ $(document).ready(function() {
                 }, 2000);
             },
             error: function(xhr) {
-                alert('Error submitting quiz.');
+                var message = (xhr.responseJSON && (xhr.responseJSON.message || xhr.responseJSON.error))
+                    ? (xhr.responseJSON.message || xhr.responseJSON.error)
+                    : 'Error submitting quiz.';
+                alert(message);
             }
         });
     });
 
     // AI Chat
     $('#ai-chat-button').on('click', function() {
-       // console.log('clickingS');
-        var container = $('#ai-chat-container');
-        container.toggle('slow');
-
+        var widget = $('#ai-chat-widget');
+        var isOpen = widget.toggleClass('is-open').hasClass('is-open');
+        $('#ai-chat-container').attr('aria-hidden', !isOpen);
+        $('#ai-chat-button').attr('aria-expanded', isOpen);
     });
     $('#ai-chat-close').on('click', function() {
-        $('#ai-chat-container').hide('slow');
+        $('#ai-chat-widget').removeClass('is-open');
+        $('#ai-chat-container').attr('aria-hidden', true);
+        $('#ai-chat-button').attr('aria-expanded', false);
     });
 
     $('#engage-chat-form').on('submit', function(e) {
@@ -508,6 +830,47 @@ $(document).ready(function() {
         });
     });
 
+    $('#engage-mcq-form').on('submit', function(e) {
+        e.preventDefault();
+
+        var form = $(this);
+        var selectedOption = form.find('input[name="selected_option"]:checked').val();
+
+        if (!selectedOption) {
+            alert('Select one option before submitting.');
+            return;
+        }
+
+        form.find(':input').prop('disabled', true);
+
+        $.ajax({
+            url: '{{ route("student.lessons.engage-mcq.submit", $lesson) }}',
+            method: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}',
+                selected_option: selectedOption
+            },
+            success: function(response) {
+                $('#engage-status-badge').text('Complete').removeClass('bg-secondary').addClass('bg-success');
+                $('#engage-mcq-result').html(
+                    '<div class="alert ' + (response.is_correct ? 'alert-success' : 'alert-warning') + ' mb-0">' +
+                        '<div><strong>Your choice:</strong> ' + escapeHtml(String(response.selected_option).toUpperCase()) + '</div>' +
+                        '<div class="mt-2">' + escapeHtml(response.feedback || '').replace(/\n/g, '<br>') + '</div>' +
+                    '</div>'
+                );
+                form.remove();
+                $('#engage-complete-helper').text('Engage checkpoint completed.');
+                $('#engage-complete-button').replaceWith('<span class="badge bg-success">Completed <i class="fas fa-check"></i></span>');
+                $('#engage-tab').addClass('bg-success text-white');
+            },
+            error: function(xhr) {
+                form.find(':input').prop('disabled', false);
+                var message = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Unable to submit checkpoint';
+                alert(message);
+            }
+        });
+    });
+
     $('#chat-form').on('submit', function(e) {
         e.preventDefault();
         var question = $('#chat-input').val();
@@ -541,21 +904,195 @@ $(document).ready(function() {
         });
     });
 
+    // ── Checkpoint helpers for explore / explain / elaborate ─────────────────
+
+    var checkpointStages = ['explore', 'explain', 'elaborate'];
+    var checkpointStarted = {
+        explore:    {{ ($checkpointStatus['explore']  ?? false) ? 'true' : 'false' }},
+        explain:    {{ ($checkpointStatus['explain']  ?? false) ? 'true' : 'false' }},
+        elaborate:  {{ ($checkpointStatus['elaborate'] ?? false) ? 'true' : 'false' }},
+    };
+
+    function appendCheckpointMessage(stage, html, isStudent) {
+        var container = $('#' + stage + '-checkpoint-messages');
+        $('#' + stage + '-checkpoint-placeholder').remove();
+        if (isStudent) {
+            container.append('<div class="text-end mb-2"><span class="bg-primary text-white p-2 rounded d-inline-block">' + html + '</span></div>');
+        } else {
+            container.append('<div class="text-start mb-2"><span class="bg-white border p-2 rounded d-inline-block">' + html + '</span></div>');
+        }
+        scrollToBottom('#' + stage + '-checkpoint-messages');
+    }
+
+    function showCheckpointLoading(stage) {
+        removeCheckpointLoading(stage);
+        $('#' + stage + '-checkpoint-placeholder').remove();
+        $('#' + stage + '-checkpoint-messages').append(
+            '<div class="text-start mb-2" id="' + stage + '-checkpoint-loading">' +
+                '<span class="bg-white border p-2 rounded d-inline-block">' +
+                    '<span class="typing-loader-label">Denzy is thinking</span>' +
+                    '<span class="typing-loader-dots"><span>.</span><span>.</span><span>.</span></span>' +
+                '</span></div>'
+        );
+        scrollToBottom('#' + stage + '-checkpoint-messages');
+    }
+
+    function removeCheckpointLoading(stage) {
+        $('#' + stage + '-checkpoint-loading').remove();
+    }
+
+    function updateCheckpointCompletionState(stage, isComplete) {
+        var badge  = $('#' + stage + '-checkpoint-badge');
+        var button = $('#' + stage + '-complete-button');
+        var helper = $('#' + stage + '-complete-helper');
+
+        if (isComplete) {
+            badge.text('Checkpoint passed').removeClass('bg-secondary bg-warning').addClass('bg-success');
+            if (button.length) {
+                if (stage === 'explore') {
+                    // Explore also requires activities
+                    if (!button.prop('disabled') || button.data('activities-ok')) {
+                        button.prop('disabled', false);
+                    }
+                    button.data('checkpoint-ok', true);
+                    // Re-check both conditions
+                    var activitiesOk = button.data('activities-ok') === true || button.data('activities-ok') === undefined;
+                    button.prop('disabled', !(activitiesOk && true));
+                } else {
+                    button.prop('disabled', false);
+                }
+            }
+            if (helper.length) {
+                helper.text('Checkpoint passed. You may now mark this stage complete.');
+            }
+        } else {
+            badge.text('In progress').removeClass('bg-success bg-warning').addClass('bg-secondary');
+        }
+    }
+
+    function requestCheckpointStart(stage) {
+        if (checkpointStarted[stage]) return;
+        checkpointStarted[stage] = true;
+
+        showCheckpointLoading(stage);
+        $('#' + stage + '-checkpoint-input').prop('disabled', true);
+        $('#' + stage + '-checkpoint-submit').prop('disabled', true);
+
+        $.ajax({
+            url: '{{ route("student.lessons.ai.ask", $lesson) }}',
+            method: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}',
+                question: '__checkpoint_start__',
+                stage: stage,
+                intent: 'start'
+            },
+            success: function(response) {
+                removeCheckpointLoading(stage);
+                appendCheckpointMessage(stage, escapeHtml(response.answer).replace(/\n/g, '<br>'), false);
+                $('#' + stage + '-checkpoint-input').prop('disabled', false);
+                $('#' + stage + '-checkpoint-submit').prop('disabled', false);
+            },
+            error: function(xhr) {
+                removeCheckpointLoading(stage);
+                var msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Unable to start checkpoint';
+                appendCheckpointMessage(stage, '<span class="text-danger">Error: ' + escapeHtml(msg) + '</span>', false);
+            }
+        });
+    }
+
+    $.each(checkpointStages, function(_, stage) {
+        $('#' + stage + '-checkpoint-form').on('submit', function(e) {
+            e.preventDefault();
+            var answer = $('#' + stage + '-checkpoint-input').val();
+            if (!answer.trim()) return;
+
+            appendCheckpointMessage(stage, escapeHtml(answer).replace(/\n/g, '<br>'), true);
+            $('#' + stage + '-checkpoint-input').val('').prop('disabled', true);
+            $('#' + stage + '-checkpoint-submit').prop('disabled', true);
+            showCheckpointLoading(stage);
+
+            $.ajax({
+                url: '{{ route("student.lessons.ai.ask", $lesson) }}',
+                method: 'POST',
+                data: {
+                    _token: '{{ csrf_token() }}',
+                    question: answer,
+                    stage: stage,
+                    intent: 'answer'
+                },
+                success: function(response) {
+                    removeCheckpointLoading(stage);
+                    var msg = escapeHtml(response.answer).replace(/\n/g, '<br>');
+                    if (response.classification) {
+                        msg += '<div class="small mt-1 text-muted">Classification: ' + escapeHtml(response.classification.replace(/_/g, ' ')) + '</div>';
+                    }
+                    
+                    // Display full answer if available for explore stage (partial classification)
+                    if (response.full_answer && stage === 'explore') {
+                        msg += '<div class="border-top pt-2 mt-2"><strong>Complete answer:</strong><br>' + 
+                               escapeHtml(response.full_answer).replace(/\n/g, '<br>') + '</div>';
+                    }
+                    
+                    appendCheckpointMessage(stage, msg, false);
+
+                    if (response.engage_status === 'complete') {
+                        updateCheckpointCompletionState(stage, true);
+                        $('#' + stage + '-checkpoint-form').hide();
+                    } else if (response.follow_up_question) {
+                        // Enable input for follow-up
+                        $('#' + stage + '-checkpoint-input').prop('disabled', false);
+                        $('#' + stage + '-checkpoint-submit').prop('disabled', false);
+                        appendCheckpointMessage(stage, escapeHtml(response.follow_up_question).replace(/\n/g, '<br>'), false);
+                    } else {
+                        $('#' + stage + '-checkpoint-input').prop('disabled', false);
+                        $('#' + stage + '-checkpoint-submit').prop('disabled', false);
+                    }
+                },
+                error: function(xhr) {
+                    removeCheckpointLoading(stage);
+                    var msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Error';
+                    appendCheckpointMessage(stage, '<span class="text-danger">Error: ' + escapeHtml(msg) + '</span>', false);
+                    $('#' + stage + '-checkpoint-input').prop('disabled', false);
+                    $('#' + stage + '-checkpoint-submit').prop('disabled', false);
+                }
+            });
+        });
+    });
+
+    // ── End checkpoint helpers ────────────────────────────────────────────────
+
     $('button[data-bs-toggle="tab"]').on('shown.bs.tab', function() {
         updateDenzyVisibility();
 
-        if (activeStage() === 'engage' && !engageStarted) {
+        var tab = activeStage();
+        touchStageAnalytics(tab);
+
+        if (engageMode === 'chat' && tab === 'engage' && !engageStarted) {
             requestEngageStart();
+        }
+
+        if (checkpointStages.indexOf(tab) !== -1 && !checkpointStarted[tab]) {
+            requestCheckpointStart(tab);
         }
     });
 
     updateDenzyVisibility();
+    touchStageAnalytics(activeStage());
     updateEngageCompletionState({{ $canMarkEngageComplete ? 'true' : 'false' }});
+    updateExploreCompletionState({{ $exploreCompletedCount }}, {{ $exploreActivities->count() }});
     scrollToBottom('#engage-chat-messages');
 
-    if (activeStage() === 'engage' && !engageStarted) {
+    if (engageMode === 'chat' && activeStage() === 'engage' && !engageStarted) {
         requestEngageStart();
     }
+
+    $.each(checkpointStages, function(_, s) {
+        if (!checkpointStarted[s]) {
+            // Pre-check: if the tab is currently active on load (unlikely but safe)
+            if (activeStage() === s) requestCheckpointStart(s);
+        }
+    });
 });
 </script>
 @endpush
@@ -565,6 +1102,10 @@ $(document).ready(function() {
 <style>
     .typing-loader-label {
         font-weight: 500;
+    }
+
+    .explore-activity-row {
+        background: rgba(13, 110, 253, 0.03);
     }
 
     .typing-loader-dots {
