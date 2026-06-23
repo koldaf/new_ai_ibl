@@ -1,4 +1,6 @@
 services:
+
+#--------Laravel application (sail Runtine) ---------------------------
     laravel.test:
         build:
             context: './vendor/laravel/sail/runtimes/8.5'
@@ -8,21 +10,66 @@ services:
         image: 'sail-8.5/app'
         extra_hosts:
             - 'host.docker.internal:host-gateway'
-        ports:
-            - '${APP_PORT:-80}:80'
-            - '${VITE_PORT:-5173}:${VITE_PORT:-5173}'
+       # ports:
+        #    - '${APP_PORT:-80}:80'
+         #   - '${VITE_PORT:-5173}:${VITE_PORT:-5173}'
         environment:
             WWWUSER: '${WWWUSER}'
             LARAVEL_SAIL: 1
             XDEBUG_MODE: '${SAIL_XDEBUG_MODE:-off}'
             XDEBUG_CONFIG: '${SAIL_XDEBUG_CONFIG:-client_host=host.docker.internal}'
             IGNITION_LOCAL_SITES_PATH: '${PWD}'
+            APP_ENV: '${APP_ENV}'
+            DB_HOST: '${DB_HOST}'
+            DB_PORT: 3306
+            DB_DATABASE: '${DB_DATABASE}'
+            DB_USERNAME: '${DB_USERNAME}'
+            DB_PASSWORD: '${DB_PASSWORD}'
+            CACHE_DRIVER: redis
+            QUEUE_CONNECTION: redis
+            REDIS_HOST: redis
+            REDIS_PORT: 6379
+            OLLAMA_BASE: http://ollama:11434
         volumes:
             - '.:/var/www/html'
         networks:
             - sail
         depends_on:
-            - mysql
+          mysql:
+            condition: service_healthy
+          redis:
+            condition: service_started
+
+#--------------QUEUE WORKER (Resuses Sail images) --------------
+    worker:
+      build:
+        context: './vendor/laravel/sail/runtimes/8.5'
+        dockerfile: Dockerfile
+        args:
+          WWWGROUP: '${WWWGROUP}'
+      image: 'sail-8.5/app'
+      container_name: ai_worker
+      restart: always
+      working_dir: /var/www/html
+      command: php artisan queue:work --sleep=3 --tries=3 --max-time=3600
+      environment:
+        WWWUSER: '${WWWUSER}'
+        LARAVEL_SAIL: 1
+        DB_HOST: mysql
+        DB_DATABASE: '${DB_DATABASE}'
+        DB_USERNAME: '${DB_USERNAME}'
+        DB_PASSWORD: '${DB_PASSWORD}'
+        CACHE_DRIVER: redis
+        QUEUE_CONNECTION: redis
+        REDIS_HOST: redis
+      volumes:
+        - '.:/var/www/html'
+      networks:
+        - sail
+      depends_on:
+        - laravel.test
+        - redis
+#----------------MYSQL Database -----------------------
     mysql:
         image: 'mysql:8.4'
         ports:
@@ -48,22 +95,56 @@ services:
                 - '-p${DB_PASSWORD}'
             retries: 3
             timeout: 5s
+#-- REDIS Cache ----------------------------------------------------------
+    redis:
+      image: redis:7-alpine
+      container_name: ai_redis
+      restart: always
+      volumes:
+        - sail-redis:/data
+      networks:
+        - sail
+      healthcheck:
+        test: ["CMD", "redis-cli", "ping"]
+        interval: 10s
+        timeout: 5s
+        retries: 3
+#---------Ollama LLM ---------------------------------------------------------
     ollama:
         image: ollama/ollama:latest
         container_name: ollama
-        ports:
-            - "11434:11434"
+        #ports:
+        #    - "11434:11434"
         volumes:
             - ollama_data:/root/.ollama
         restart: unless-stopped
         networks:
             - sail
+#--------NGINX (SSL termination + reverse proxy -------------------------------------
+    nginx:
+      image: nginx:alpine
+      container_name: ai-nginx
+      restart: always
+      ports:
+        - "80:80"
+        - "443:443"
+      volumes:
+        - /home/olawale/ai-server/nginx/conf.d:/etc/nginx/conf.d
+        - /home/olawale/ai-server/ssl:/etc/nginx/ssl:ro
+        - /home/olawale/ai-server/ai-ibl:/var/www/html:ro'
+      networks:
+        - sail
+      depends_on:
+        - laravel.test
+        - ollama
 
 networks:
     sail:
         driver: bridge
 volumes:
     sail-mysql:
+        driver: local
+    sail-redis:
         driver: local
     ollama_data:
         driver: local
