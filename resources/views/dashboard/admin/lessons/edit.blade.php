@@ -571,11 +571,27 @@
         }
 
         function extractAjaxErrorMessage(xhr, fallbackMessage) {
-            if (!xhr || !xhr.responseJSON) {
+            if (!xhr) {
                 return fallbackMessage;
             }
 
             var response = xhr.responseJSON;
+
+            // Some 4xx responses come back as plain text/HTML; try to parse JSON manually.
+            if (!response && xhr.responseText) {
+                try {
+                    response = JSON.parse(xhr.responseText);
+                } catch (e) {
+                    response = null;
+                }
+            }
+
+            if (!response) {
+                var statusPart = xhr.status ? ('HTTP ' + xhr.status + (xhr.statusText ? ' ' + xhr.statusText : '')) : '';
+                var rawPart = xhr.responseText ? ('\n' + String(xhr.responseText).slice(0, 500)) : '';
+                return statusPart || rawPart ? (statusPart + rawPart).trim() : fallbackMessage;
+            }
+
             var messages = [];
 
             if (response.message) {
@@ -595,10 +611,48 @@
             }
 
             if (messages.length === 0) {
-                return fallbackMessage;
+                var fallbackWithStatus = xhr.status ? ('HTTP ' + xhr.status + (xhr.statusText ? ' ' + xhr.statusText : '')) : '';
+                return fallbackWithStatus || fallbackMessage;
             }
 
             return messages.join('\n');
+        }
+
+        function debugAjaxError(contextLabel, xhr, formData) {
+            var payload = {};
+
+            if (formData && typeof formData.entries === 'function') {
+                for (const pair of formData.entries()) {
+                    var key = pair[0];
+                    var value = pair[1];
+
+                    if (value instanceof File) {
+                        payload[key] = {
+                            name: value.name,
+                            size: value.size,
+                            type: value.type
+                        };
+                    } else {
+                        payload[key] = value;
+                    }
+                }
+            }
+
+            var parsedResponse = xhr && xhr.responseJSON ? xhr.responseJSON : null;
+            if (!parsedResponse && xhr && xhr.responseText) {
+                try {
+                    parsedResponse = JSON.parse(xhr.responseText);
+                } catch (e) {
+                    parsedResponse = null;
+                }
+            }
+
+            console.group('[Upload Debug] ' + contextLabel);
+            console.error('Status:', xhr ? xhr.status : '(no xhr)', xhr ? xhr.statusText : '');
+            console.error('Request payload:', payload);
+            console.error('Parsed response:', parsedResponse);
+            console.error('Raw response text:', xhr && xhr.responseText ? xhr.responseText : '(empty)');
+            console.groupEnd();
         }
         
         // Save text for stage (AJAX)
@@ -790,6 +844,9 @@
                 url: '{{ route("admin.lessons.stages.checkpoint-corpus.store", ["lesson" => $lesson->id, "stage" => "_stage_"]) }}'.replace('_stage_', stage),
                 method: 'POST',
                 data: formData,
+                headers: {
+                    'Accept': 'application/json'
+                },
                 processData: false,
                 contentType: false,
                 success: function(response) {
@@ -802,6 +859,7 @@
                     alert(response.message || 'Checkpoint corpus uploaded.');
                 },
                 error: function(xhr) {
+                    debugAjaxError('Checkpoint corpus upload', xhr, formData);
                     var message = extractAjaxErrorMessage(xhr, 'Unknown error');
                     alert('Error uploading checkpoint corpus: ' + message);
                 }
@@ -957,6 +1015,9 @@
                 url: '{{ route("admin.lessons.stages.media.store", ["lesson" => $lesson->id, "stage" => "_stage_"]) }}'.replace('_stage_', stage),
                 method: 'POST',
                 data: formData,
+                headers: {
+                    'Accept': 'application/json'
+                },
                 processData: false,
                 contentType: false,
                 success: function(response) {
@@ -977,6 +1038,7 @@
                     alert(response.message || 'File uploaded successfully!');
                 },
                 error: function(xhr) {
+                    debugAjaxError('Stage media upload', xhr, formData);
                     var message = extractAjaxErrorMessage(xhr, 'Unknown error');
                     alert('Upload failed: ' + message);
                 }
