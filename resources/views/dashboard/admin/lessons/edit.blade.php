@@ -569,6 +569,37 @@
         function escapeHtml(value) {
             return $('<div>').text(value || '').html();
         }
+
+        function extractAjaxErrorMessage(xhr, fallbackMessage) {
+            if (!xhr || !xhr.responseJSON) {
+                return fallbackMessage;
+            }
+
+            var response = xhr.responseJSON;
+            var messages = [];
+
+            if (response.message) {
+                messages.push(response.message);
+            } else if (response.error) {
+                messages.push(response.error);
+            }
+
+            if (response.errors && typeof response.errors === 'object') {
+                $.each(response.errors, function(field, fieldErrors) {
+                    if (Array.isArray(fieldErrors)) {
+                        $.each(fieldErrors, function(_, errorText) {
+                            messages.push(errorText);
+                        });
+                    }
+                });
+            }
+
+            if (messages.length === 0) {
+                return fallbackMessage;
+            }
+
+            return messages.join('\n');
+        }
         
         // Save text for stage (AJAX)
         $('.stage-text-form').on('submit', function(e) {
@@ -771,7 +802,7 @@
                     alert(response.message || 'Checkpoint corpus uploaded.');
                 },
                 error: function(xhr) {
-                    var message = (xhr.responseJSON && (xhr.responseJSON.message || xhr.responseJSON.error)) ? (xhr.responseJSON.message || xhr.responseJSON.error) : 'Unknown error';
+                    var message = extractAjaxErrorMessage(xhr, 'Unknown error');
                     alert('Error uploading checkpoint corpus: ' + message);
                 }
             });
@@ -946,10 +977,7 @@
                     alert(response.message || 'File uploaded successfully!');
                 },
                 error: function(xhr) {
-                    console.log(xhr);
-                    var message = (xhr.responseJSON && (xhr.responseJSON.message || xhr.responseJSON.error))
-                        ? (xhr.responseJSON.message || xhr.responseJSON.error)
-                        : 'Unknown error';
+                    var message = extractAjaxErrorMessage(xhr, 'Unknown error');
                     alert('Upload failed: ' + message);
                 }
             });
