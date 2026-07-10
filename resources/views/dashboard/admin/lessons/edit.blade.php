@@ -453,6 +453,99 @@
 
 <script>
     $(document).ready(function() {
+        window.__uploadDebugEnabled = true;
+        console.info('[Upload Debug] Hooks initialized for lesson edit page');
+
+        $(document).ajaxError(function(event, jqxhr, settings) {
+            var url = settings && settings.url ? String(settings.url) : '';
+            var isUploadRequest = /\/media|checkpoint-corpus|lessons\/.+\/stages\//.test(url);
+
+            if (!isUploadRequest) {
+                return;
+            }
+
+            var parsed = null;
+            if (jqxhr && jqxhr.responseText) {
+                try {
+                    parsed = JSON.parse(jqxhr.responseText);
+                } catch (e) {
+                    parsed = null;
+                }
+            }
+
+            console.error('[Upload Debug][Global AJAX Error]', {
+                url: url,
+                method: settings && settings.type ? settings.type : '(unknown)',
+                status: jqxhr ? jqxhr.status : null,
+                statusText: jqxhr ? jqxhr.statusText : null,
+                parsedResponse: parsed,
+                rawResponseText: jqxhr && jqxhr.responseText ? jqxhr.responseText : ''
+            });
+        });
+
+        if (!window.__uploadTransportDebugInstalled) {
+            window.__uploadTransportDebugInstalled = true;
+
+            if (window.fetch) {
+                var originalFetch = window.fetch.bind(window);
+                window.fetch = function() {
+                    var requestInput = arguments[0];
+                    return originalFetch.apply(window, arguments).then(function(response) {
+                        try {
+                            var requestUrl = requestInput && requestInput.url ? String(requestInput.url) : String(requestInput || '');
+                            var isUploadUrl = /\/media|checkpoint-corpus|lessons\/.+\/stages\//.test(requestUrl);
+
+                            if (!response.ok && isUploadUrl) {
+                                response.clone().text().then(function(bodyText) {
+                                    console.error('[Upload Debug][fetch]', {
+                                        url: requestUrl,
+                                        status: response.status,
+                                        statusText: response.statusText,
+                                        rawResponseText: bodyText
+                                    });
+                                }).catch(function() {});
+                            }
+                        } catch (e) {}
+
+                        return response;
+                    });
+                };
+            }
+
+            if (window.XMLHttpRequest) {
+                var originalOpen = XMLHttpRequest.prototype.open;
+                var originalSend = XMLHttpRequest.prototype.send;
+
+                XMLHttpRequest.prototype.open = function(method, url) {
+                    this.__uploadDebugMethod = method;
+                    this.__uploadDebugUrl = url;
+                    return originalOpen.apply(this, arguments);
+                };
+
+                XMLHttpRequest.prototype.send = function() {
+                    this.addEventListener('loadend', function() {
+                        var url = String(this.__uploadDebugUrl || '');
+                        var isUploadUrl = /\/media|checkpoint-corpus|lessons\/.+\/stages\//.test(url);
+                        if (!isUploadUrl) {
+                            return;
+                        }
+
+                        if (this.status >= 400) {
+                            console.error('[Upload Debug][xhr]', {
+                                url: url,
+                                method: this.__uploadDebugMethod || '(unknown)',
+                                status: this.status,
+                                statusText: this.statusText,
+                                rawResponseText: this.responseText || ''
+                            });
+                        }
+                    });
+
+                    return originalSend.apply(this, arguments);
+                };
+            }
+        }
+
         function renderCheckpointQuestionItem(question, stage) {
             return '<div class="checkpoint-question-item border rounded p-3 mb-2" ' +
                 'data-id="' + question.id + '" ' +
