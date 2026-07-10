@@ -618,6 +618,38 @@
             return messages.join('\n');
         }
 
+        function extractAjaxAlertMessage(xhr, fallbackMessage) {
+            if (!xhr) {
+                return fallbackMessage;
+            }
+
+            var response = xhr.responseJSON;
+
+            if (!response && xhr.responseText) {
+                try {
+                    response = JSON.parse(xhr.responseText);
+                } catch (e) {
+                    response = null;
+                }
+            }
+
+            if (response) {
+                if (response.error) {
+                    return response.error;
+                }
+
+                if (response.message) {
+                    return response.message;
+                }
+            }
+
+            if (xhr.status === 422) {
+                return 'The file failed to upload.';
+            }
+
+            return fallbackMessage;
+        }
+
         function debugAjaxError(contextLabel, xhr, formData) {
             var payload = {};
 
@@ -647,12 +679,24 @@
                 }
             }
 
-            console.group('[Upload Debug] ' + contextLabel);
-            console.error('Status:', xhr ? xhr.status : '(no xhr)', xhr ? xhr.statusText : '');
-            console.error('Request payload:', payload);
-            console.error('Parsed response:', parsedResponse);
-            console.error('Raw response text:', xhr && xhr.responseText ? xhr.responseText : '(empty)');
-            console.groupEnd();
+            var debugData = {
+                context: contextLabel,
+                status: xhr ? xhr.status : null,
+                statusText: xhr ? xhr.statusText : null,
+                requestPayload: payload,
+                parsedResponse: parsedResponse,
+                rawResponseText: xhr && xhr.responseText ? xhr.responseText : ''
+            };
+
+            window.__lastUploadDebug = debugData;
+
+            // Keep logs flat and explicit so they are visible across console filter settings.
+            console.log('[Upload Debug]', contextLabel);
+            console.log('[Upload Debug] Status:', debugData.status, debugData.statusText);
+            console.log('[Upload Debug] Request payload:', debugData.requestPayload);
+            console.log('[Upload Debug] Parsed response:', debugData.parsedResponse);
+            console.log('[Upload Debug] Raw response text:', debugData.rawResponseText);
+            console.error('[Upload Debug][Error Stream]', debugData);
         }
         
         // Save text for stage (AJAX)
@@ -860,7 +904,7 @@
                 },
                 error: function(xhr) {
                     debugAjaxError('Checkpoint corpus upload', xhr, formData);
-                    var message = extractAjaxErrorMessage(xhr, 'Unknown error');
+                    var message = extractAjaxAlertMessage(xhr, 'Upload failed. Check console for details.');
                     alert('Error uploading checkpoint corpus: ' + message);
                 }
             });
@@ -1039,7 +1083,7 @@
                 },
                 error: function(xhr) {
                     debugAjaxError('Stage media upload', xhr, formData);
-                    var message = extractAjaxErrorMessage(xhr, 'Unknown error');
+                    var message = extractAjaxAlertMessage(xhr, 'Upload failed. Check console for details.');
                     alert('Upload failed: ' + message);
                 }
             });
