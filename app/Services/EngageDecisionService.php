@@ -28,6 +28,20 @@ class EngageDecisionService
         $stageContent = optional($lesson->getStageContent('engage'))->content;
         $contextText = trim(strip_tags((string) $stageContent));
 
+        $latestStartMessage = AiChatMessage::query()
+            ->where('user_id', $user->id)
+            ->where('lesson_id', $lesson->id)
+            ->where('stage', 'engage')
+            ->where('question', '__engage_start__')
+            ->latest('id')
+            ->first();
+
+        [$classificationContext, $fallbackContextSource] = $this->buildFallbackContext(
+            $contextText,
+            $latestStartMessage?->answer,
+            $latestStartMessage?->context_source
+        );
+
         $lessonHistory = AiChatMessage::query()
             ->where('user_id', $user->id)
             ->where('lesson_id', $lesson->id)
@@ -55,7 +69,7 @@ class EngageDecisionService
                 $confidence = $ragDecision['confidence'];
                 $usedVectorRetrieval = true;
             } else {
-                [$classification, $confidence] = $this->classify($answer, $contextText, false);
+                [$classification, $confidence] = $this->classify($answer, $classificationContext, false);
             }
         }
 
@@ -74,7 +88,7 @@ class EngageDecisionService
             $completionReason = 'max_followups_reached';
         } elseif ($needsFollowup) {
             $followUpQuestion = $ragDecision['follow_up']
-                ?? $this->buildFollowupQuestion($classification, $contextText, $answer, $user->name);
+                ?? $this->buildFollowupQuestion($classification, $classificationContext, $answer, $user->name);
         }
 
         [$misconceptionId, $misconceptionSource] = $this->persistMisconception(
@@ -87,7 +101,7 @@ class EngageDecisionService
         );
 
         $feedback = $ragDecision['feedback']
-            ?? $this->buildFeedback($classification, $contextText, $followUpQuestion, $user->name);
+            ?? $this->buildFeedback($classification, $classificationContext, $followUpQuestion, $user->name);
 
         return [
             'classification' => $classification,
@@ -101,14 +115,39 @@ class EngageDecisionService
             'turn_index' => $turnIndex,
             'context_source' => $usedVectorRetrieval
                 ? 'rag'
-                : ($contextText !== '' ? 'stage_text' : 'none'),
+                : $fallbackContextSource,
             'retrieval_mode' => $usedVectorRetrieval
                 ? 'vector'
-                : ($contextText !== '' ? 'non_vector' : 'none'),
+                : ($fallbackContextSource !== 'none' ? 'non_vector' : 'none'),
             'answer' => $followUpQuestion
                 ? $feedback . ' Follow-up: ' . $followUpQuestion
                 : $feedback,
         ];
+    }
+
+    private function buildFallbackContext(string $stageContextText, ?string $startPromptText, ?string $startPromptSource): array
+    {
+        $stageContextText = trim($stageContextText);
+        $startPromptText = trim((string) $startPromptText);
+        $startPromptSource = trim((string) $startPromptSource);
+
+        if ($startPromptText !== '' && $startPromptSource === 'teacher_question') {
+            return [$startPromptText, 'teacher_question'];
+        }
+
+        if ($stageContextText !== '' && $startPromptText !== '') {
+            return [$stageContextText . "\n" . $startPromptText, 'stage_text'];
+        }
+
+        if ($stageContextText !== '') {
+            return [$stageContextText, 'stage_text'];
+        }
+
+        if ($startPromptText !== '') {
+            return [$startPromptText, in_array($startPromptSource, ['teacher_question', 'stage_text'], true) ? $startPromptSource : 'stage_text'];
+        }
+
+        return ['', 'none'];
     }
 
     private function classifyWithRag(Lesson $lesson, string $answer, string $userName, string $memoryContext = ''): ?array

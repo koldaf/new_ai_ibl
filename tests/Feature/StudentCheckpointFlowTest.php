@@ -58,6 +58,56 @@ class StudentCheckpointFlowTest extends TestCase
     }
 
     #[Test]
+    public function engage_answer_uses_teacher_prompt_context_instead_of_defaulting_to_off_topic(): void
+    {
+        $student = User::query()->forceCreate($this->userPayload('Engage Context Student', 'student', 'engage-context@example.test'));
+        $lesson = Lesson::create([
+            'title' => 'Energy Sources',
+            'description' => 'Fallback context alignment for engage classification',
+        ]);
+
+        LessonStageContent::create([
+            'lesson_id' => $lesson->id,
+            'stage' => 'engage',
+            'content' => 'Photosynthesis uses chlorophyll and stomata to produce glucose in plants.',
+            'content_type' => 'text',
+        ]);
+
+        LessonCheckpointQuestion::create([
+            'lesson_id' => $lesson->id,
+            'stage' => 'engage',
+            'question_text' => 'During a power outage, what do a battery and petrol have in common?',
+            'is_active' => true,
+            'sort_order' => 1,
+            'created_by' => User::query()->first()?->id ?? 1,
+        ]);
+
+        $this->actingAs($student)
+            ->postJson(route('student.lessons.ai.ask', $lesson), [
+                'question' => '__engage_start__',
+                'stage' => 'engage',
+                'intent' => 'start',
+            ])
+            ->assertOk();
+
+        $response = $this->actingAs($student)
+            ->postJson(route('student.lessons.ai.ask', $lesson), [
+                'question' => 'Both battery and petrol store chemical energy for later use.',
+                'stage' => 'engage',
+                'intent' => 'answer',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('stage', 'engage')
+            ->assertJsonPath('intent', 'answer');
+
+        $this->assertNotEquals('off_topic', $response->json('classification'));
+        $this->assertNotEquals(0.4, (float) $response->json('confidence'));
+    }
+
+    #[Test]
     public function student_can_start_checkpoint_for_explore_stage(): void
     {
         $student = User::query()->forceCreate($this->userPayload('Test Student', 'student', 'student@example.test'));
