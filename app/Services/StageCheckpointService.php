@@ -54,7 +54,7 @@ class StageCheckpointService
             return [
                 'answer' => $teacherQuestion->question_text,
                 'engage_status' => 'in_progress',
-                'context_source' => 'stage_text',
+                'context_source' => 'teacher_question',
                 'retrieval_mode' => 'non_vector',
             ];
         }
@@ -188,7 +188,7 @@ class StageCheckpointService
 
         $hasCheckpointContext = LessonCheckpointCorpus::query()
             ->where('lesson_id', $lesson->id)
-            ->where('stage', $stage)
+            ->whereNull('stage')
             ->where('processing_status', 'completed')
             ->exists();
 
@@ -448,7 +448,7 @@ class StageCheckpointService
     {
         $paths = LessonCheckpointCorpus::query()
             ->where('lesson_id', $lesson->id)
-            ->where('stage', $stage)
+            ->whereNull('stage')
             ->where('processing_status', 'completed')
             ->whereNotNull('vector_store_path')
             ->orderBy('sort_order')

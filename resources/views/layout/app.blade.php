@@ -4,11 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="editor-image-upload-url" content="{{ route('admin.editor-images.store') }}">
     <title>@yield('title', 'Dashboard') — AI-IBL</title>
 
     {{-- Google Fonts --}}
     <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet"/>
-    <link href="{{ asset('summernote/summernote-bs5.min.css') }}" rel="stylesheet">
     {{-- Vite compiled CSS --}}
     @vite('resources/css/app.css')
 
@@ -414,11 +414,6 @@
             background: rgba(0,0,0,0.4);
             z-index: 1045;
         }
-        /* _____Summernote custom overrides_____ */
-        /*.note-modal { z-index: 2000 !important; } 
-        .note-modal-backdrop { z-index: 1990 !important; }
-        .note-modal-backdrop { display: none !important; }*/
-
         /* ════════════════════════════════════════════════
            RESPONSIVE
         ════════════════════════════════════════════════ */
@@ -626,16 +621,8 @@
     {{-- Vite JS --}}
     <script src="{{ asset('js/jquery-4.0.0.min.js') }}"></script>
     @vite('resources/js/app.js')
-    <script src="{{ asset('summernote/summernote-bs5.min.js') }}"></script>
 
     <script>
-        $(document).ready(function() {
-            $('.wysiwyg-editor').summernote({
-                placeholder: 'Input your content here...',
-                tabsize: 2,
-                height: 200
-            });
-        });
         // ── Mobile sidebar toggle ───────────────────────
         const sidebar        = document.getElementById('sidebar');
         const overlay        = document.getElementById('sidebarOverlay');

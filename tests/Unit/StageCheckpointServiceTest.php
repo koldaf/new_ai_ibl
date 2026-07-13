@@ -57,6 +57,7 @@ class StageCheckpointServiceTest extends TestCase
 
         $this->assertSame('Which pattern seems strongest?', $result['answer']);
         $this->assertSame('in_progress', $result['engage_status']);
+        $this->assertSame('teacher_question', $result['context_source']);
     }
 
     #[Test]

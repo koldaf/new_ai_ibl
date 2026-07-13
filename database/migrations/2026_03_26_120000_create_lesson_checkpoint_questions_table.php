@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('lesson_checkpoint_questions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('lesson_id')->constrained()->cascadeOnDelete();
-            $table->enum('stage', ['explore', 'explain', 'elaborate']);
+            $table->enum('stage', ['engage', 'explore', 'explain', 'elaborate']);
             $table->text('question_text');
             $table->boolean('is_active')->default(true);
             $table->unsignedInteger('sort_order')->default(1);

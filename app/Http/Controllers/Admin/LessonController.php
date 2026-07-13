@@ -5,6 +5,7 @@ use App\Jobs\ProcessPdfEmbedding;
 use App\Http\Controllers\Controller;
 use App\Models\Lesson;
 use App\Models\User;
+use App\Support\HtmlSanitizer;
 use Illuminate\Http\Request;
 
 class LessonController extends Controller
@@ -56,7 +57,7 @@ class LessonController extends Controller
             'teacher_id' => $validated['teacher_id'] ?? null,
             'subject' => $validated['subject'] ?? null,
             'grade_level' => $validated['grade_level'] ?? null,
-            'description' => $validated['description'] ?? null,
+            'description' => HtmlSanitizer::sanitizeNullable($validated['description'] ?? null),
             'lesson_material_file' => $path,
             'processing_status' => 'pending',
         ]);
@@ -75,6 +76,8 @@ class LessonController extends Controller
     public function edit(Lesson $lesson)
     {
         $teachers = User::query()->where('role', 'teacher')->orderBy('name')->get();
+        $checkpointQuestions = $lesson->checkpointQuestions()->get();
+        $checkpointCorpora = $lesson->checkpointCorpora()->whereNull('stage')->get();
 
         // Preload stage contents and media for each stage to use in the view
         $stages = ['engage', 'explore', 'explain', 'elaborate', 'evaluate'];
@@ -83,18 +86,11 @@ class LessonController extends Controller
             $stageData[$stage] = [
                 'content' => $lesson->getStageContent($stage),
                 'media'   => $lesson->getStageMedia($stage),
-                'misconceptions' => $lesson->misconceptions()->where('stage', $stage)->latest()->get(),
                 'engageMcq' => $stage === 'engage' ? $lesson->getEngageMcqQuestion($stage) : null,
-                'checkpointQuestions' => in_array($stage, ['explore', 'explain', 'elaborate'], true)
-                    ? $lesson->getCheckpointQuestions($stage)
-                    : collect(),
-                'checkpointCorpora' => in_array($stage, ['explore', 'explain', 'elaborate'], true)
-                    ? $lesson->getCheckpointCorpora($stage)
-                    : collect(),
             ];
         }
 
-        return view('dashboard.admin.lessons.edit', compact('lesson', 'stageData', 'stages', 'teachers'));
+        return view('dashboard.admin.lessons.edit', compact('lesson', 'stageData', 'stages', 'teachers', 'checkpointQuestions', 'checkpointCorpora'));
     }
 
     /**
@@ -113,6 +109,8 @@ class LessonController extends Controller
         if (!empty($validated['teacher_id'])) {
             abort_unless(User::whereKey($validated['teacher_id'])->where('role', 'teacher')->exists(), 422);
         }
+
+        $validated['description'] = HtmlSanitizer::sanitizeNullable($validated['description'] ?? null);
 
         $lesson->update($validated);
 

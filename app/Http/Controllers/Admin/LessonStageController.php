@@ -13,6 +13,7 @@ use App\Models\LessonMisconception;
 use App\Models\LessonStageContent;
 use App\Models\LessonEmbedding;
 use App\Models\QuizQuestion;
+use App\Support\HtmlSanitizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -22,7 +23,7 @@ use Illuminate\Validation\Rule;
 class LessonStageController extends Controller
 {
     private const VALID_STAGES = ['engage', 'explore', 'explain', 'elaborate', 'evaluate'];
-    private const CHECKPOINT_STAGES = ['explore', 'explain', 'elaborate'];
+    private const CHECKPOINT_STAGES = ['engage', 'explore', 'explain', 'elaborate'];
 
     /**
      * Update the text content for a stage.
@@ -41,11 +42,16 @@ class LessonStageController extends Controller
         }
 
         $contentType = $request->input('content_type', 'text');
+        $content = (string) ($validated['content'] ?? '');
+
+        if ($contentType === 'wysiwyg') {
+            $content = HtmlSanitizer::sanitize($content);
+        }
 
         $stageContent = LessonStageContent::updateOrCreate(
             ['lesson_id' => $lesson->id, 'stage' => $stage],
             [
-                'content' => $validated['content'] ?? '',
+                'content' => $content,
                 'content_type' => $contentType,
                 'activity_mode' => $validated['activity_mode'] ?? 'chat',
             ]
@@ -116,10 +122,224 @@ class LessonStageController extends Controller
         ]);
     }
 
+    /**
+     * Store a centralized lesson checkpoint question.
+     */
+    public function storeLessonCheckpointQuestion(Request $request, Lesson $lesson)
+    {
+        $validated = $request->validate([
+            'stage' => ['required', Rule::in(self::CHECKPOINT_STAGES)],
+            'question_text' => 'required|string|max:1000',
+            'is_active' => 'nullable|boolean',
+            'sort_order' => 'nullable|integer|min:1|max:9999',
+        ]);
+
+        $question = LessonCheckpointQuestion::create([
+            'lesson_id' => $lesson->id,
+            'stage' => $validated['stage'],
+            'question_text' => $validated['question_text'],
+            'is_active' => $validated['is_active'] ?? true,
+            'sort_order' => $validated['sort_order'] ?? ($lesson->checkpointQuestions()->max('sort_order') + 1),
+            'created_by' => $request->user()?->id,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Checkpoint question saved.',
+            'data' => $this->serializeCheckpointQuestion($question),
+        ]);
+    }
+
+    /**
+     * Update a centralized lesson checkpoint question.
+     */
+    public function updateLessonCheckpointQuestion(Request $request, Lesson $lesson, LessonCheckpointQuestion $question)
+    {
+        if ($question->lesson_id !== $lesson->id) {
+            return response()->json(['error' => 'Checkpoint question not found for this lesson.'], 404);
+        }
+
+        $validated = $request->validate([
+            'stage' => ['required', Rule::in(self::CHECKPOINT_STAGES)],
+            'question_text' => 'required|string|max:1000',
+            'is_active' => 'nullable|boolean',
+            'sort_order' => 'nullable|integer|min:1|max:9999',
+        ]);
+
+        $question->update([
+            'stage' => $validated['stage'],
+            'question_text' => $validated['question_text'],
+            'is_active' => $validated['is_active'] ?? false,
+            'sort_order' => $validated['sort_order'] ?? $question->sort_order,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Checkpoint question updated.',
+            'data' => $this->serializeCheckpointQuestion($question->fresh()),
+        ]);
+    }
+
+    /**
+     * Delete a centralized lesson checkpoint question.
+     */
+    public function destroyLessonCheckpointQuestion(Lesson $lesson, LessonCheckpointQuestion $question)
+    {
+        if ($question->lesson_id !== $lesson->id) {
+            return response()->json(['error' => 'Checkpoint question not found for this lesson.'], 404);
+        }
+
+        $question->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Checkpoint question deleted.',
+        ]);
+    }
+
+    /**
+     * Upload a centralized lesson checkpoint corpus file.
+     */
+    public function uploadLessonCheckpointCorpus(Request $request, Lesson $lesson)
+    {
+        $validated = $request->validate([
+            'file' => 'required|file|max:10240',
+            'title' => 'nullable|string|max:255',
+            'description' => 'nullable|string',
+            'sort_order' => 'nullable|integer|min:1|max:9999',
+        ]);
+
+        $file = $request->file('file');
+        $extension = strtolower((string) $file->getClientOriginalExtension());
+
+        if (!in_array($extension, ['pdf', 'txt', 'md'], true)) {
+            return response()->json(['error' => 'Checkpoint corpus supports PDF, TXT, and MD files only.'], 422);
+        }
+
+        $path = null;
+
+        try {
+            $path = $file->store("lessons/{$lesson->id}/checkpoint-corpus", 'public');
+
+            $corpus = LessonCheckpointCorpus::create([
+                'lesson_id' => $lesson->id,
+                'stage' => null,
+                'title' => $validated['title'] ?? null,
+                'description' => $validated['description'] ?? null,
+                'file_path' => $path,
+                'file_name' => $file->getClientOriginalName(),
+                'file_type' => $extension,
+                'processing_status' => 'pending',
+                'sort_order' => $validated['sort_order'] ?? ($lesson->checkpointCorpora()->max('sort_order') + 1),
+                'created_by' => $request->user()?->id,
+            ]);
+
+            ProcessCheckpointCorpusEmbedding::dispatch($corpus);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Checkpoint corpus uploaded. Embedding has started.',
+                'data' => $this->serializeCheckpointCorpus($corpus->fresh()),
+            ]);
+        } catch (\Throwable $e) {
+            if ($path) {
+                Storage::disk('public')->delete($path);
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Checkpoint corpus upload failed: ' . $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    public function destroyLessonCheckpointCorpus(Lesson $lesson, LessonCheckpointCorpus $corpus)
+    {
+        if ($corpus->lesson_id !== $lesson->id) {
+            return response()->json(['error' => 'Checkpoint corpus not found for this lesson.'], 404);
+        }
+
+        Storage::disk('public')->delete($corpus->file_path);
+
+        if ($corpus->vector_store_path && File::exists($corpus->vector_store_path)) {
+            File::delete($corpus->vector_store_path);
+        }
+
+        LessonEmbedding::query()
+            ->where('source_type', 'checkpoint_corpus')
+            ->where('source_id', (string) $corpus->id)
+            ->delete();
+
+        $corpus->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Checkpoint corpus deleted.',
+        ]);
+    }
+
+    public function getLessonCheckpointCorpusStatus(Lesson $lesson, LessonCheckpointCorpus $corpus)
+    {
+        if ($corpus->lesson_id !== $lesson->id) {
+            return response()->json(['error' => 'Checkpoint corpus not found for this lesson.'], 404);
+        }
+
+        return response()->json([
+            'id' => $corpus->id,
+            'processing_status' => $corpus->processing_status,
+            'error_message' => $corpus->error_message,
+            'vector_store_path' => $corpus->vector_store_path,
+            'url' => $corpus->url,
+        ]);
+    }
+
+    public function reprocessLessonCheckpointCorpus(Lesson $lesson, LessonCheckpointCorpus $corpus)
+    {
+        if ($corpus->lesson_id !== $lesson->id) {
+            return response()->json(['error' => 'Checkpoint corpus not found for this lesson.'], 404);
+        }
+
+        if ($corpus->processing_status === 'pending' || $corpus->processing_status === 'processing') {
+            return response()->json([
+                'error' => 'Cannot reprocess a corpus that is already being processed.',
+            ], 422);
+        }
+
+        try {
+            if ($corpus->vector_store_path && File::exists($corpus->vector_store_path)) {
+                File::delete($corpus->vector_store_path);
+            }
+
+            LessonEmbedding::query()
+                ->where('source_type', 'checkpoint_corpus')
+                ->where('source_id', (string) $corpus->id)
+                ->delete();
+
+            $corpus->update([
+                'processing_status' => 'pending',
+                'vector_store_path' => null,
+                'error_message' => null,
+            ]);
+
+            ProcessCheckpointCorpusEmbedding::dispatch($corpus);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Checkpoint corpus reprocessing started.',
+                'data' => $this->serializeCheckpointCorpus($corpus->fresh()),
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to reprocess corpus: ' . $e->getMessage(),
+            ], 422);
+        }
+    }
+
     public function storeCheckpointQuestion(Request $request, Lesson $lesson, string $stage)
     {
         if (!$this->isCheckpointStage($stage)) {
-            return response()->json(['error' => 'Checkpoint questions are only available for explore, explain, and elaborate.'], 422);
+            return response()->json(['error' => 'Checkpoint questions are only available for engage, explore, explain, and elaborate.'], 422);
         }
 
         $validated = $this->validateCheckpointQuestion($request);
@@ -143,7 +363,7 @@ class LessonStageController extends Controller
     public function updateCheckpointQuestion(Request $request, Lesson $lesson, string $stage, LessonCheckpointQuestion $question)
     {
         if (!$this->isCheckpointStage($stage)) {
-            return response()->json(['error' => 'Checkpoint questions are only available for explore, explain, and elaborate.'], 422);
+            return response()->json(['error' => 'Checkpoint questions are only available for engage, explore, explain, and elaborate.'], 422);
         }
 
         if ($question->lesson_id !== $lesson->id || $question->stage !== $stage) {
@@ -168,7 +388,7 @@ class LessonStageController extends Controller
     public function destroyCheckpointQuestion(Lesson $lesson, string $stage, LessonCheckpointQuestion $question)
     {
         if (!$this->isCheckpointStage($stage)) {
-            return response()->json(['error' => 'Checkpoint questions are only available for explore, explain, and elaborate.'], 422);
+            return response()->json(['error' => 'Checkpoint questions are only available for engage, explore, explain, and elaborate.'], 422);
         }
 
         if ($question->lesson_id !== $lesson->id || $question->stage !== $stage) {
@@ -186,7 +406,7 @@ class LessonStageController extends Controller
     public function uploadCheckpointCorpus(Request $request, Lesson $lesson, string $stage)
     {
         if (!$this->isCheckpointStage($stage)) {
-            return response()->json(['error' => 'Checkpoint corpus is only available for explore, explain, and elaborate.'], 422);
+            return response()->json(['error' => 'Checkpoint corpus is only available for engage, explore, explain, and elaborate.'], 422);
         }
 
         $validated = $request->validate([
@@ -243,7 +463,7 @@ class LessonStageController extends Controller
     public function destroyCheckpointCorpus(Lesson $lesson, string $stage, LessonCheckpointCorpus $corpus)
     {
         if (!$this->isCheckpointStage($stage)) {
-            return response()->json(['error' => 'Checkpoint corpus is only available for explore, explain, and elaborate.'], 422);
+            return response()->json(['error' => 'Checkpoint corpus is only available for engage, explore, explain, and elaborate.'], 422);
         }
 
         if ($corpus->lesson_id !== $lesson->id || $corpus->stage !== $stage) {
@@ -275,7 +495,7 @@ class LessonStageController extends Controller
     public function getCheckpointCorpusStatus(Lesson $lesson, string $stage, LessonCheckpointCorpus $corpus)
     {
         if (!$this->isCheckpointStage($stage)) {
-            return response()->json(['error' => 'Checkpoint corpus is only available for explore, explain, and elaborate.'], 422);
+            return response()->json(['error' => 'Checkpoint corpus is only available for engage, explore, explain, and elaborate.'], 422);
         }
 
         if ($corpus->lesson_id !== $lesson->id || $corpus->stage !== $stage) {
@@ -296,7 +516,7 @@ class LessonStageController extends Controller
     public function reprocessCheckpointCorpus(Lesson $lesson, string $stage, LessonCheckpointCorpus $corpus)
     {
         if (!$this->isCheckpointStage($stage)) {
-            return response()->json(['error' => 'Checkpoint corpus is only available for explore, explain, and elaborate.'], 422);
+            return response()->json(['error' => 'Checkpoint corpus is only available for engage, explore, explain, and elaborate.'], 422);
         }
 
         if ($corpus->lesson_id !== $lesson->id || $corpus->stage !== $stage) {
@@ -392,7 +612,7 @@ class LessonStageController extends Controller
                 'file_path'   => $path,
                 'file_name'   => $file->getClientOriginalName(),
                 'title'       => $request->input('title'),
-                'description' => $request->input('description'),
+                'description' => HtmlSanitizer::sanitizeNullable($request->input('description')),
                 'order'       => LessonMedia::where('lesson_id', $lesson->id)->where('stage', $stage)->count() + 1,
             ]);
 
@@ -428,6 +648,23 @@ class LessonStageController extends Controller
                 'media_type' => $media->media_type,
                 'title'      => $media->title,
             ]
+        ]);
+    }
+
+    public function uploadEditorImage(Request $request)
+    {
+        $validated = $request->validate([
+            'image' => 'required|file|image|max:5120|mimes:jpg,jpeg,png,gif,webp',
+        ]);
+
+        $path = $validated['image']->store('editor-images', 'public');
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'path' => $path,
+                'url' => asset('storage/' . $path),
+            ],
         ]);
     }
 
@@ -641,6 +878,7 @@ class LessonStageController extends Controller
     {
         return [
             'id' => $question->id,
+            'stage' => $question->stage,
             'question_text' => $question->question_text,
             'is_active' => (bool) $question->is_active,
             'sort_order' => $question->sort_order,
@@ -651,6 +889,7 @@ class LessonStageController extends Controller
     {
         return [
             'id' => $corpus->id,
+            'stage' => $corpus->stage,
             'title' => $corpus->title,
             'description' => $corpus->description,
             'file_name' => $corpus->file_name,

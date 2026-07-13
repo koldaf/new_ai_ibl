@@ -139,6 +139,16 @@ class Lesson extends Model
         return $this->checkpointCorpora()->where('stage', $stage)->get();
     }
 
+    public function getLessonCheckpointQuestions()
+    {
+        return $this->checkpointQuestions()->get();
+    }
+
+    public function getLessonCheckpointCorpora()
+    {
+        return $this->checkpointCorpora()->whereNull('stage')->get();
+    }
+
     public function assignedTeachers()
     {
         return $this->belongsToMany(User::class, 'lesson_teacher', 'lesson_id', 'teacher_id')->withTimestamps();

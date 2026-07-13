@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AiChatMessage;
 use App\Models\Lesson;
+use App\Models\LessonCheckpointQuestion;
 use App\Models\LessonMisconception;
 use App\Models\MisconceptionEvent;
 use App\Models\User;
@@ -225,6 +226,18 @@ class EngageDecisionService
     {
         $stageContent = optional($lesson->getStageContent('engage'))->content;
         $contextText = trim(strip_tags((string) $stageContent));
+        $teacherQuestion = $this->selectTeacherCheckpointQuestion($lesson, $user);
+
+        if ($teacherQuestion !== null) {
+            return [
+                'answer' => $teacherQuestion->question_text,
+                'feedback_text' => 'Let us activate your prior knowledge first.',
+                'follow_up_question' => $teacherQuestion->question_text,
+                'engage_status' => 'in_progress',
+                'context_source' => 'teacher_question',
+                'retrieval_mode' => 'non_vector',
+            ];
+        }
         
 
         $topic = $this->deriveTopic($contextText);
@@ -268,6 +281,43 @@ class EngageDecisionService
             'context_source' => 'stage_text',
             'retrieval_mode' => 'non_vector',
         ];
+    }
+
+    private function selectTeacherCheckpointQuestion(Lesson $lesson, ?User $user = null): ?LessonCheckpointQuestion
+    {
+        $questions = LessonCheckpointQuestion::query()
+            ->where('lesson_id', $lesson->id)
+            ->where('stage', 'engage')
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+
+        if ($questions->isEmpty()) {
+            return null;
+        }
+
+        if ($user === null) {
+            return $questions->shuffle()->first();
+        }
+
+        $lastQuestion = AiChatMessage::query()
+            ->where('user_id', $user->id)
+            ->where('lesson_id', $lesson->id)
+            ->where('stage', 'engage')
+            ->where('question', '__engage_start__')
+            ->latest('id')
+            ->value('answer');
+
+        $eligible = $questions;
+        if ($lastQuestion && $questions->count() > 1) {
+            $eligible = $questions->filter(fn (LessonCheckpointQuestion $question) => $question->question_text !== $lastQuestion)->values();
+            if ($eligible->isEmpty()) {
+                $eligible = $questions;
+            }
+        }
+
+        return $eligible->shuffle()->first();
     }
 
     private function classify(string $answer, string $contextText, bool $hasTemplateMatch): array

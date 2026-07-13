@@ -49,6 +49,142 @@
                 </div>
             </div>
 
+            <div class="card mb-4" id="lesson-checkpoint-manager">
+                <div class="card-header">Lesson Knowledge Corpus & Checkpoint Questions</div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">Manage checkpoint questions centrally for Engage, Explore, Explain, and Elaborate. Upload lesson-level knowledge corpus files (PDF, TXT, MD) that can be used across all checkpoint stages.</p>
+
+                    <div class="row">
+                        <div class="col-lg-6">
+                            <h5 class="mb-3">Checkpoint Questions</h5>
+                            <form class="lesson-checkpoint-question-form">
+                                @csrf
+                                <input type="hidden" name="question_id" value="">
+                                <div class="mb-3">
+                                    <label class="form-label">Stage</label>
+                                    <select class="form-control" name="stage" required>
+                                        <option value="engage">Engage</option>
+                                        <option value="explore">Explore</option>
+                                        <option value="explain">Explain</option>
+                                        <option value="elaborate">Elaborate</option>
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Question</label>
+                                    <textarea class="form-control" name="question_text" rows="3" placeholder="Enter a short checkpoint question" required></textarea>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-4 mb-3">
+                                        <label class="form-label">Order</label>
+                                        <input type="number" class="form-control" name="sort_order" min="1" value="1">
+                                    </div>
+                                    <div class="col-md-4 mb-3 d-flex align-items-end">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="is_active" value="1" id="lesson_checkpoint_active" checked>
+                                            <label class="form-check-label" for="lesson_checkpoint_active">Active</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3 d-flex align-items-end gap-2">
+                                        <button type="submit" class="btn btn-primary lesson-checkpoint-question-submit">Save Question</button>
+                                        <button type="button" class="btn btn-outline-secondary lesson-checkpoint-question-cancel d-none">Cancel</button>
+                                    </div>
+                                </div>
+                            </form>
+
+                            <div class="lesson-checkpoint-question-list mt-3">
+                                @forelse($checkpointQuestions as $question)
+                                    <div class="lesson-checkpoint-question-item border rounded p-3 mb-2"
+                                        data-id="{{ $question->id }}"
+                                        data-stage="{{ $question->stage }}"
+                                        data-question-text="{{ e($question->question_text) }}"
+                                        data-sort-order="{{ $question->sort_order }}"
+                                        data-is-active="{{ $question->is_active ? '1' : '0' }}">
+                                        <div class="d-flex justify-content-between align-items-start gap-3">
+                                            <div>
+                                                <div class="fw-semibold">{{ $question->question_text }}</div>
+                                                <div class="small text-muted mt-1">Stage: {{ ucfirst($question->stage) }} • Order: {{ $question->sort_order }}</div>
+                                            </div>
+                                            <div class="d-flex flex-column align-items-end gap-2">
+                                                <span class="badge {{ $question->is_active ? 'bg-success' : 'bg-secondary' }}">{{ $question->is_active ? 'active' : 'inactive' }}</span>
+                                                <div class="d-flex gap-2">
+                                                    <button type="button" class="btn btn-sm btn-outline-primary edit-lesson-checkpoint-question">Edit</button>
+                                                    <button type="button" class="btn btn-sm btn-outline-danger delete-lesson-checkpoint-question">Delete</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                @empty
+                                    <p class="no-lesson-checkpoint-question text-muted mb-0">No checkpoint questions yet.</p>
+                                @endforelse
+                            </div>
+                        </div>
+
+                        <div class="col-lg-6">
+                            <h5 class="mb-3">Lesson Knowledge Corpus</h5>
+                            <form class="lesson-checkpoint-corpus-form" enctype="multipart/form-data">
+                                @csrf
+                                <div class="row">
+                                    <div class="col-md-7 mb-3">
+                                        <label class="form-label">File</label>
+                                        <input type="file" name="file" class="form-control" accept=".pdf,.txt,.md" required>
+                                    </div>
+                                    <div class="col-md-5 mb-3">
+                                        <label class="form-label">Title</label>
+                                        <input type="text" name="title" class="form-control" placeholder="Optional label">
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-8 mb-3">
+                                        <label class="form-label">Description</label>
+                                        <textarea name="description" class="form-control" rows="2" placeholder="Optional notes for this corpus file"></textarea>
+                                    </div>
+                                    <div class="col-md-2 mb-3">
+                                        <label class="form-label">Order</label>
+                                        <input type="number" name="sort_order" class="form-control" min="1" value="1">
+                                    </div>
+                                    <div class="col-md-2 mb-3 d-flex align-items-end">
+                                        <button type="submit" class="btn btn-success w-100">Upload</button>
+                                    </div>
+                                </div>
+                            </form>
+
+                            <div class="lesson-checkpoint-corpus-list mt-3">
+                                @forelse($checkpointCorpora as $corpus)
+                                    <div class="lesson-checkpoint-corpus-item border rounded p-3 mb-2" data-id="{{ $corpus->id }}" data-status="{{ $corpus->processing_status }}">
+                                        <div class="d-flex justify-content-between align-items-start gap-3">
+                                            <div>
+                                                <div class="fw-semibold">{{ $corpus->title ?: $corpus->file_name }}</div>
+                                                <div class="small text-muted">{{ $corpus->file_name }} • {{ strtoupper($corpus->file_type) }} • Order: {{ $corpus->sort_order }}</div>
+                                                @if($corpus->description)
+                                                    <div class="small text-muted mt-1">{{ $corpus->description }}</div>
+                                                @endif
+                                                @if($corpus->error_message)
+                                                    <div class="small text-danger mt-1">{{ $corpus->error_message }}</div>
+                                                @endif
+                                            </div>
+                                            <div class="d-flex flex-column align-items-end gap-2">
+                                                <span class="badge lesson-corpus-status-badge {{ $corpus->processing_status === 'completed' ? 'bg-success' : ($corpus->processing_status === 'failed' ? 'bg-danger' : 'bg-warning text-dark') }}">{{ $corpus->processing_status }}</span>
+                                                <div class="d-flex gap-2 lesson-corpus-actions" style="flex-wrap: wrap; justify-content: flex-end;">
+                                                    @if($corpus->processing_status === 'completed')
+                                                        <a href="{{ $corpus->url }}" target="_blank" class="btn btn-sm btn-outline-secondary">View</a>
+                                                    @endif
+                                                    @if($corpus->processing_status === 'failed')
+                                                        <button type="button" class="btn btn-sm btn-outline-warning reprocess-lesson-checkpoint-corpus" title="Retry this corpus upload">Retry</button>
+                                                    @endif
+                                                    <button type="button" class="btn btn-sm btn-outline-danger delete-lesson-checkpoint-corpus">Delete</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                @empty
+                                    <p class="no-lesson-checkpoint-corpus text-muted mb-0">No lesson knowledge corpus uploaded yet.</p>
+                                @endforelse
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- 5E Tabs -->
             <ul class="nav nav-tabs" id="lessonTabs" role="tablist">
                 @foreach($stages as $index => $stage)
@@ -155,134 +291,7 @@
                         </div>
                     @endif
 
-                    @if(in_array($stage, ['explore', 'explain', 'elaborate']))
-                        <div class="card mb-3 checkpoint-config" data-stage="{{ $stage }}">
-                            <div class="card-header">AI Checkpoint</div>
-                            <div class="card-body">
-                                <p class="text-muted small mb-3">Add teacher-authored checkpoint questions and a stage-only corpus for AI evaluation. The uploaded corpus is used only for this checkpoint stage.</p>
 
-                                <div class="row">
-                                    <div class="col-lg-6">
-                                        <h5 class="mb-3">Checkpoint Questions</h5>
-                                        <form class="checkpoint-question-form" data-stage="{{ $stage }}">
-                                            @csrf
-                                            <input type="hidden" name="question_id" value="">
-                                            <div class="mb-3">
-                                                <label class="form-label">Question</label>
-                                                <textarea class="form-control" name="question_text" rows="3" placeholder="Enter a short checkpoint question" required></textarea>
-                                            </div>
-                                            <div class="row">
-                                                <div class="col-md-4 mb-3">
-                                                    <label class="form-label">Order</label>
-                                                    <input type="number" class="form-control" name="sort_order" min="1" value="1">
-                                                </div>
-                                                <div class="col-md-4 mb-3 d-flex align-items-end">
-                                                    <div class="form-check">
-                                                        <input class="form-check-input" type="checkbox" name="is_active" value="1" id="checkpoint_active_{{ $stage }}" checked>
-                                                        <label class="form-check-label" for="checkpoint_active_{{ $stage }}">Active</label>
-                                                    </div>
-                                                </div>
-                                                <div class="col-md-4 mb-3 d-flex align-items-end gap-2">
-                                                    <button type="submit" class="btn btn-primary checkpoint-question-submit">Save Question</button>
-                                                    <button type="button" class="btn btn-outline-secondary checkpoint-question-cancel d-none">Cancel</button>
-                                                </div>
-                                            </div>
-                                        </form>
-
-                                        <div class="checkpoint-question-list mt-3" data-stage="{{ $stage }}">
-                                            @forelse($stageData[$stage]['checkpointQuestions'] as $question)
-                                                <div class="checkpoint-question-item border rounded p-3 mb-2"
-                                                    data-id="{{ $question->id }}"
-                                                    data-stage="{{ $stage }}"
-                                                    data-question-text="{{ e($question->question_text) }}"
-                                                    data-sort-order="{{ $question->sort_order }}"
-                                                    data-is-active="{{ $question->is_active ? '1' : '0' }}">
-                                                    <div class="d-flex justify-content-between align-items-start gap-3">
-                                                        <div>
-                                                            <div class="fw-semibold">{{ $question->question_text }}</div>
-                                                            <div class="small text-muted mt-1">Order: {{ $question->sort_order }}</div>
-                                                        </div>
-                                                        <div class="d-flex flex-column align-items-end gap-2">
-                                                            <span class="badge {{ $question->is_active ? 'bg-success' : 'bg-secondary' }}">{{ $question->is_active ? 'active' : 'inactive' }}</span>
-                                                            <div class="d-flex gap-2">
-                                                                <button type="button" class="btn btn-sm btn-outline-primary edit-checkpoint-question">Edit</button>
-                                                                <button type="button" class="btn btn-sm btn-outline-danger delete-checkpoint-question">Delete</button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            @empty
-                                                <p class="no-checkpoint-question text-muted mb-0">No checkpoint questions yet.</p>
-                                            @endforelse
-                                        </div>
-                                    </div>
-
-                                    <div class="col-lg-6">
-                                        <h5 class="mb-3">Checkpoint Corpus</h5>
-                                        <form class="checkpoint-corpus-form" data-stage="{{ $stage }}" enctype="multipart/form-data">
-                                            @csrf
-                                            <div class="row">
-                                                <div class="col-md-7 mb-3">
-                                                    <label class="form-label">File</label>
-                                                    <input type="file" name="file" class="form-control" accept=".pdf,.txt,.md" required>
-                                                </div>
-                                                <div class="col-md-5 mb-3">
-                                                    <label class="form-label">Title</label>
-                                                    <input type="text" name="title" class="form-control" placeholder="Optional label">
-                                                </div>
-                                            </div>
-                                            <div class="row">
-                                                <div class="col-md-8 mb-3">
-                                                    <label class="form-label">Description</label>
-                                                    <textarea name="description" class="form-control" rows="2" placeholder="Optional notes for this corpus file"></textarea>
-                                                </div>
-                                                <div class="col-md-2 mb-3">
-                                                    <label class="form-label">Order</label>
-                                                    <input type="number" name="sort_order" class="form-control" min="1" value="1">
-                                                </div>
-                                                <div class="col-md-2 mb-3 d-flex align-items-end">
-                                                    <button type="submit" class="btn btn-success w-100">Upload</button>
-                                                </div>
-                                            </div>
-                                        </form>
-
-                                        <div class="checkpoint-corpus-list mt-3" data-stage="{{ $stage }}">
-                                            @forelse($stageData[$stage]['checkpointCorpora'] as $corpus)
-                                                <div class="checkpoint-corpus-item border rounded p-3 mb-2" data-id="{{ $corpus->id }}" data-stage="{{ $stage }}" data-status="{{ $corpus->processing_status }}">
-                                                    <div class="d-flex justify-content-between align-items-start gap-3">
-                                                        <div>
-                                                            <div class="fw-semibold">{{ $corpus->title ?: $corpus->file_name }}</div>
-                                                            <div class="small text-muted">{{ $corpus->file_name }} • {{ strtoupper($corpus->file_type) }} • Order: {{ $corpus->sort_order }}</div>
-                                                            @if($corpus->description)
-                                                                <div class="small text-muted mt-1">{{ $corpus->description }}</div>
-                                                            @endif
-                                                            @if($corpus->error_message)
-                                                                <div class="small text-danger mt-1">{{ $corpus->error_message }}</div>
-                                                            @endif
-                                                        </div>
-                                                        <div class="d-flex flex-column align-items-end gap-2">
-                                                            <span class="badge corpus-status-badge {{ $corpus->processing_status === 'completed' ? 'bg-success' : ($corpus->processing_status === 'failed' ? 'bg-danger' : 'bg-warning text-dark') }}">{{ $corpus->processing_status }}</span>
-                                                            <div class="d-flex gap-2 corpus-actions" style="flex-wrap: wrap; justify-content: flex-end;">
-                                                                @if($corpus->processing_status === 'completed')
-                                                                    <a href="{{ $corpus->url }}" target="_blank" class="btn btn-sm btn-outline-secondary">View</a>
-                                                                @endif
-                                                                @if($corpus->processing_status === 'failed')
-                                                                    <button type="button" class="btn btn-sm btn-outline-warning reprocess-checkpoint-corpus" title="Retry this corpus upload">Retry</button>
-                                                                @endif
-                                                                <button type="button" class="btn btn-sm btn-outline-danger delete-checkpoint-corpus">Delete</button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            @empty
-                                                <p class="no-checkpoint-corpus text-muted mb-0">No checkpoint corpus uploaded yet.</p>
-                                            @endforelse
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    @endif
 
                     <!-- Media Upload Section -->
                     <div class="card">
@@ -350,96 +359,7 @@
                         </div>
                     </div>
 
-                    <div class="card mt-3">
-                        <div class="card-header">Misconception List</div>
-                        <div class="card-body">
-                            <form class="misconception-form" data-stage="{{ $stage }}">
-                                @csrf
-                                <input type="hidden" name="misconception_id" value="">
-                                <div class="row">
-                                    <div class="col-md-3 mb-3">
-                                        <label class="form-label">Concept Tag</label>
-                                        <input type="text" name="concept_tag" class="form-control" placeholder="e.g. gravity">
-                                    </div>
-                                    <div class="col-md-5 mb-3">
-                                        <label class="form-label">Misconception Label</label>
-                                        <input type="text" name="label" class="form-control" placeholder="Common wrong idea" required>
-                                    </div>
-                                    <div class="col-md-2 mb-3">
-                                        <label class="form-label">Status</label>
-                                        <select name="status" class="form-control">
-                                            <option value="approved">Approved</option>
-                                            <option value="pending_review">Pending review</option>
-                                            <option value="rejected">Rejected</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-2 mb-3 d-flex align-items-end">
-                                        <button type="submit" class="btn btn-warning w-100 misconception-submit">Add Item</button>
-                                    </div>
-                                </div>
-                                <div class="row">
-                                    <div class="col-md-6 mb-3">
-                                        <label class="form-label">Description</label>
-                                        <textarea name="description" class="form-control" rows="2" placeholder="Describe the misconception students may show."></textarea>
-                                    </div>
-                                    <div class="col-md-3 mb-3">
-                                        <label class="form-label">Correct Concept</label>
-                                        <textarea name="correct_concept" class="form-control" rows="2" placeholder="What is correct instead?"></textarea>
-                                    </div>
-                                    <div class="col-md-3 mb-3">
-                                        <label class="form-label">Remediation Hint</label>
-                                        <textarea name="remediation_hint" class="form-control" rows="2" placeholder="Short hint for recovery."></textarea>
-                                    </div>
-                                </div>
-                                <div class="d-flex gap-2">
-                                    <button type="button" class="btn btn-outline-secondary btn-sm misconception-cancel d-none">Cancel Edit</button>
-                                </div>
-                            </form>
 
-                            <div class="misconception-list mt-3" data-stage="{{ $stage }}">
-                                @forelse($stageData[$stage]['misconceptions'] as $misconception)
-                                <div class="misconception-item border rounded p-3 mb-2"
-                                    data-id="{{ $misconception->id }}"
-                                    data-stage="{{ $stage }}"
-                                    data-concept-tag="{{ e($misconception->concept_tag ?? '') }}"
-                                    data-label="{{ e($misconception->label) }}"
-                                    data-description="{{ e($misconception->description ?? '') }}"
-                                    data-correct-concept="{{ e($misconception->correct_concept ?? '') }}"
-                                    data-remediation-hint="{{ e($misconception->remediation_hint ?? '') }}"
-                                    data-status="{{ e($misconception->status) }}"
-                                    data-source="{{ e($misconception->source) }}">
-                                    <div class="d-flex justify-content-between align-items-start gap-3">
-                                        <div>
-                                            <strong>{{ $misconception->label }}</strong>
-                                            <span class="badge bg-warning text-dark ms-2">{{ $misconception->status }}</span>
-                                            @if($misconception->concept_tag)
-                                                <span class="badge bg-secondary ms-1">{{ $misconception->concept_tag }}</span>
-                                            @endif
-                                            @if($misconception->description)
-                                                <div class="small text-muted mt-1">{{ $misconception->description }}</div>
-                                            @endif
-                                            @if($misconception->correct_concept)
-                                                <div class="small mt-2"><strong>Correct concept:</strong> {{ $misconception->correct_concept }}</div>
-                                            @endif
-                                            @if($misconception->remediation_hint)
-                                                <div class="small"><strong>Hint:</strong> {{ $misconception->remediation_hint }}</div>
-                                            @endif
-                                        </div>
-                                        <div class="d-flex flex-column align-items-end gap-2">
-                                            <span class="badge bg-info text-dark">{{ $misconception->source }}</span>
-                                            <div class="d-flex gap-2">
-                                                <button type="button" class="btn btn-sm btn-outline-primary edit-misconception">Edit</button>
-                                                <button type="button" class="btn btn-sm btn-outline-danger delete-misconception">Delete</button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                @empty
-                                <p class="no-misconception text-muted mb-0">No misconception items yet.</p>
-                                @endforelse
-                            </div>
-                        </div>
-                    </div>
                 </div>
                 @endforeach
             </div>
@@ -458,7 +378,7 @@
 
         $(document).ajaxError(function(event, jqxhr, settings) {
             var url = settings && settings.url ? String(settings.url) : '';
-            var isUploadRequest = /\/media|checkpoint-corpus|lessons\/.+\/stages\//.test(url);
+            var isUploadRequest = /\/media|checkpoint-corpus|checkpoint\/corpus|lessons\/.+\/stages\//.test(url);
 
             if (!isUploadRequest) {
                 return;
@@ -493,7 +413,7 @@
                     return originalFetch.apply(window, arguments).then(function(response) {
                         try {
                             var requestUrl = requestInput && requestInput.url ? String(requestInput.url) : String(requestInput || '');
-                            var isUploadUrl = /\/media|checkpoint-corpus|lessons\/.+\/stages\//.test(requestUrl);
+                            var isUploadUrl = /\/media|checkpoint-corpus|checkpoint\/corpus|lessons\/.+\/stages\//.test(requestUrl);
 
                             if (!response.ok && isUploadUrl) {
                                 response.clone().text().then(function(bodyText) {
@@ -525,7 +445,7 @@
                 XMLHttpRequest.prototype.send = function() {
                     this.addEventListener('loadend', function() {
                         var url = String(this.__uploadDebugUrl || '');
-                        var isUploadUrl = /\/media|checkpoint-corpus|lessons\/.+\/stages\//.test(url);
+                        var isUploadUrl = /\/media|checkpoint-corpus|checkpoint\/corpus|lessons\/.+\/stages\//.test(url);
                         if (!isUploadUrl) {
                             return;
                         }
@@ -546,30 +466,30 @@
             }
         }
 
-        function renderCheckpointQuestionItem(question, stage) {
-            return '<div class="checkpoint-question-item border rounded p-3 mb-2" ' +
+        function renderCheckpointQuestionItem(question) {
+            return '<div class="lesson-checkpoint-question-item border rounded p-3 mb-2" ' +
                 'data-id="' + question.id + '" ' +
-                'data-stage="' + escapeHtml(stage) + '" ' +
+                'data-stage="' + escapeHtml(question.stage || 'explore') + '" ' +
                 'data-question-text="' + escapeHtml(question.question_text) + '" ' +
                 'data-sort-order="' + escapeHtml(String(question.sort_order || 1)) + '" ' +
                 'data-is-active="' + (question.is_active ? '1' : '0') + '">' +
                 '<div class="d-flex justify-content-between align-items-start gap-3">' +
                 '<div>' +
                 '<div class="fw-semibold">' + escapeHtml(question.question_text) + '</div>' +
-                '<div class="small text-muted mt-1">Order: ' + escapeHtml(String(question.sort_order || 1)) + '</div>' +
+                '<div class="small text-muted mt-1">Stage: ' + escapeHtml((question.stage || 'explore').charAt(0).toUpperCase() + (question.stage || 'explore').slice(1)) + ' • Order: ' + escapeHtml(String(question.sort_order || 1)) + '</div>' +
                 '</div>' +
                 '<div class="d-flex flex-column align-items-end gap-2">' +
                 '<span class="badge ' + (question.is_active ? 'bg-success' : 'bg-secondary') + '">' + (question.is_active ? 'active' : 'inactive') + '</span>' +
                 '<div class="d-flex gap-2">' +
-                '<button type="button" class="btn btn-sm btn-outline-primary edit-checkpoint-question">Edit</button>' +
-                '<button type="button" class="btn btn-sm btn-outline-danger delete-checkpoint-question">Delete</button>' +
+                '<button type="button" class="btn btn-sm btn-outline-primary edit-lesson-checkpoint-question">Edit</button>' +
+                '<button type="button" class="btn btn-sm btn-outline-danger delete-lesson-checkpoint-question">Delete</button>' +
                 '</div>' +
                 '</div>' +
                 '</div>' +
                 '</div>';
         }
 
-        function renderCheckpointCorpusItem(corpus, stage) {
+        function renderCheckpointCorpusItem(corpus) {
             var statusClass = corpus.processing_status === 'completed'
                 ? 'bg-success'
                 : (corpus.processing_status === 'failed' ? 'bg-danger' : 'bg-warning text-dark');
@@ -579,11 +499,11 @@
                 actions += '<a href="' + escapeHtml(corpus.url) + '" target="_blank" class="btn btn-sm btn-outline-secondary">View</a>';
             }
             if (corpus.processing_status === 'failed') {
-                actions += '<button type="button" class="btn btn-sm btn-outline-warning reprocess-checkpoint-corpus" title="Retry this corpus upload">Retry</button>';
+                actions += '<button type="button" class="btn btn-sm btn-outline-warning reprocess-lesson-checkpoint-corpus" title="Retry this corpus upload">Retry</button>';
             }
-            actions += '<button type="button" class="btn btn-sm btn-outline-danger delete-checkpoint-corpus">Delete</button>';
+            actions += '<button type="button" class="btn btn-sm btn-outline-danger delete-lesson-checkpoint-corpus">Delete</button>';
 
-            return '<div class="checkpoint-corpus-item border rounded p-3 mb-2" data-id="' + corpus.id + '" data-stage="' + escapeHtml(stage) + '" data-status="' + escapeHtml(corpus.processing_status) + '">' +
+            return '<div class="lesson-checkpoint-corpus-item border rounded p-3 mb-2" data-id="' + corpus.id + '" data-status="' + escapeHtml(corpus.processing_status) + '">' +
                 '<div class="d-flex justify-content-between align-items-start gap-3">' +
                 '<div>' +
                 '<div class="fw-semibold">' + escapeHtml(corpus.title || corpus.file_name) + '</div>' +
@@ -592,8 +512,8 @@
                 (corpus.error_message ? '<div class="small text-danger mt-1">' + escapeHtml(corpus.error_message) + '</div>' : '') +
                 '</div>' +
                 '<div class="d-flex flex-column align-items-end gap-2">' +
-                '<span class="badge corpus-status-badge ' + statusClass + '">' + escapeHtml(corpus.processing_status) + '</span>' +
-                '<div class="d-flex gap-2 corpus-actions" style="flex-wrap: wrap; justify-content: flex-end;">' +
+                '<span class="badge lesson-corpus-status-badge ' + statusClass + '">' + escapeHtml(corpus.processing_status) + '</span>' +
+                '<div class="d-flex gap-2 lesson-corpus-actions" style="flex-wrap: wrap; justify-content: flex-end;">' +
                 actions +
                 '</div>' +
                 '</div>' +
@@ -601,52 +521,13 @@
                 '</div>';
         }
 
-        function renderMisconceptionItem(misconception, stage) {
-            return '<div class="misconception-item border rounded p-3 mb-2" ' +
-                'data-id="' + misconception.id + '" ' +
-                'data-stage="' + escapeHtml(stage) + '" ' +
-                'data-concept-tag="' + escapeHtml(misconception.concept_tag || '') + '" ' +
-                'data-label="' + escapeHtml(misconception.label) + '" ' +
-                'data-description="' + escapeHtml(misconception.description || '') + '" ' +
-                'data-correct-concept="' + escapeHtml(misconception.correct_concept || '') + '" ' +
-                'data-remediation-hint="' + escapeHtml(misconception.remediation_hint || '') + '" ' +
-                'data-status="' + escapeHtml(misconception.status) + '" ' +
-                'data-source="' + escapeHtml(misconception.source) + '">' +
-                '<div class="d-flex justify-content-between align-items-start gap-3">' +
-                '<div>' +
-                '<strong>' + escapeHtml(misconception.label) + '</strong>' +
-                '<span class="badge bg-warning text-dark ms-2">' + escapeHtml(misconception.status) + '</span>' +
-                (misconception.concept_tag ? '<span class="badge bg-secondary ms-1">' + escapeHtml(misconception.concept_tag) + '</span>' : '') +
-                (misconception.description ? '<div class="small text-muted mt-1">' + escapeHtml(misconception.description) + '</div>' : '') +
-                (misconception.correct_concept ? '<div class="small mt-2"><strong>Correct concept:</strong> ' + escapeHtml(misconception.correct_concept) + '</div>' : '') +
-                (misconception.remediation_hint ? '<div class="small"><strong>Hint:</strong> ' + escapeHtml(misconception.remediation_hint) + '</div>' : '') +
-                '</div>' +
-                '<div class="d-flex flex-column align-items-end gap-2">' +
-                '<span class="badge bg-info text-dark">' + escapeHtml(misconception.source) + '</span>' +
-                '<div class="d-flex gap-2">' +
-                '<button type="button" class="btn btn-sm btn-outline-primary edit-misconception">Edit</button>' +
-                '<button type="button" class="btn btn-sm btn-outline-danger delete-misconception">Delete</button>' +
-                '</div>' +
-                '</div>' +
-                '</div>' +
-                '</div>';
-        }
-
-        function resetMisconceptionForm(form) {
-            form[0].reset();
-            form.find('[name="misconception_id"]').val('');
-            form.find('[name="status"]').val('approved');
-            form.find('.misconception-submit').text('Add Item');
-            form.find('.misconception-cancel').addClass('d-none');
-        }
-
         function resetCheckpointQuestionForm(form) {
             form[0].reset();
             form.find('[name="question_id"]').val('');
             form.find('[name="sort_order"]').val('1');
             form.find('[name="is_active"]').prop('checked', true);
-            form.find('.checkpoint-question-submit').text('Save Question');
-            form.find('.checkpoint-question-cancel').addClass('d-none');
+            form.find('.lesson-checkpoint-question-submit').text('Save Question');
+            form.find('.lesson-checkpoint-question-cancel').addClass('d-none');
         }
 
         function toggleEngageMcqConfig(mode) {
@@ -874,16 +755,16 @@
             });
         });
 
-        $('.checkpoint-question-form').on('submit', function(e) {
+        $('.lesson-checkpoint-question-form').on('submit', function(e) {
             e.preventDefault();
 
             var form = $(this);
-            var stage = form.data('stage');
+            var stage = form.find('[name="stage"]').val();
             var questionId = form.find('[name="question_id"]').val();
             var isEditing = !!questionId;
             var url = isEditing
-                ? '{{ route("admin.lessons.stages.checkpoint-questions.update", ["lesson" => $lesson->id, "stage" => "_stage_", "question" => "_question_"]) }}'.replace('_stage_', stage).replace('_question_', questionId)
-                : '{{ route("admin.lessons.stages.checkpoint-questions.store", ["lesson" => $lesson->id, "stage" => "_stage_"]) }}'.replace('_stage_', stage);
+                ? '{{ route("admin.lessons.checkpoint.questions.update", ["lesson" => $lesson->id, "question" => "_question_"]) }}'.replace('_question_', questionId)
+                : '{{ route("admin.lessons.checkpoint.questions.store", ["lesson" => $lesson->id]) }}';
             var payload = form.serializeArray();
 
             if (isEditing) {
@@ -896,13 +777,13 @@
                 data: $.param(payload),
                 success: function(response) {
                     var question = response.data;
-                    var list = $('.checkpoint-question-list[data-stage="' + stage + '"]');
-                    list.find('.no-checkpoint-question').remove();
+                    var list = $('.lesson-checkpoint-question-list');
+                    list.find('.no-lesson-checkpoint-question').remove();
 
                     if (isEditing) {
-                        list.find('.checkpoint-question-item[data-id="' + question.id + '"]').replaceWith(renderCheckpointQuestionItem(question, stage));
+                        list.find('.lesson-checkpoint-question-item[data-id="' + question.id + '"]').replaceWith(renderCheckpointQuestionItem(question));
                     } else {
-                        list.prepend(renderCheckpointQuestionItem(question, stage));
+                        list.prepend(renderCheckpointQuestionItem(question));
                     }
 
                     resetCheckpointQuestionForm(form);
@@ -915,30 +796,29 @@
             });
         });
 
-        $(document).on('click', '.edit-checkpoint-question', function() {
-            var item = $(this).closest('.checkpoint-question-item');
-            var stage = item.data('stage');
-            var form = $('.checkpoint-question-form[data-stage="' + stage + '"]');
+        $(document).on('click', '.edit-lesson-checkpoint-question', function() {
+            var item = $(this).closest('.lesson-checkpoint-question-item');
+            var form = $('.lesson-checkpoint-question-form');
 
             form.find('[name="question_id"]').val(item.data('id'));
+            form.find('[name="stage"]').val(item.data('stage'));
             form.find('[name="question_text"]').val(item.data('question-text'));
             form.find('[name="sort_order"]').val(item.data('sort-order'));
             form.find('[name="is_active"]').prop('checked', String(item.data('is-active')) === '1');
-            form.find('.checkpoint-question-submit').text('Update Question');
-            form.find('.checkpoint-question-cancel').removeClass('d-none');
+            form.find('.lesson-checkpoint-question-submit').text('Update Question');
+            form.find('.lesson-checkpoint-question-cancel').removeClass('d-none');
 
             $('html, body').animate({
                 scrollTop: form.offset().top - 120
             }, 200);
         });
 
-        $('.checkpoint-question-cancel').on('click', function() {
-            resetCheckpointQuestionForm($(this).closest('.checkpoint-question-form'));
+        $('.lesson-checkpoint-question-cancel').on('click', function() {
+            resetCheckpointQuestionForm($(this).closest('.lesson-checkpoint-question-form'));
         });
 
-        $(document).on('click', '.delete-checkpoint-question', function() {
-            var item = $(this).closest('.checkpoint-question-item');
-            var stage = item.data('stage');
+        $(document).on('click', '.delete-lesson-checkpoint-question', function() {
+            var item = $(this).closest('.lesson-checkpoint-question-item');
             var questionId = item.data('id');
 
             if (!confirm('Delete this checkpoint question?')) {
@@ -946,21 +826,21 @@
             }
 
             $.ajax({
-                url: '{{ route("admin.lessons.stages.checkpoint-questions.destroy", ["lesson" => $lesson->id, "stage" => "_stage_", "question" => "_question_"]) }}'.replace('_stage_', stage).replace('_question_', questionId),
+                url: '{{ route("admin.lessons.checkpoint.questions.destroy", ["lesson" => $lesson->id, "question" => "_question_"]) }}'.replace('_question_', questionId),
                 method: 'POST',
                 data: {
                     _token: '{{ csrf_token() }}',
                     _method: 'DELETE'
                 },
                 success: function(response) {
-                    var list = item.closest('.checkpoint-question-list');
+                    var list = item.closest('.lesson-checkpoint-question-list');
                     item.remove();
 
-                    if (list.find('.checkpoint-question-item').length === 0) {
-                        list.append('<p class="no-checkpoint-question text-muted mb-0">No checkpoint questions yet.</p>');
+                    if (list.find('.lesson-checkpoint-question-item').length === 0) {
+                        list.append('<p class="no-lesson-checkpoint-question text-muted mb-0">No checkpoint questions yet.</p>');
                     }
 
-                    resetCheckpointQuestionForm($('.checkpoint-question-form[data-stage="' + stage + '"]'));
+                    resetCheckpointQuestionForm($('.lesson-checkpoint-question-form'));
                     alert(response.message || 'Checkpoint question deleted.');
                 },
                 error: function(xhr) {
@@ -970,15 +850,14 @@
             });
         });
 
-        $('.checkpoint-corpus-form').on('submit', function(e) {
+        $('.lesson-checkpoint-corpus-form').on('submit', function(e) {
             e.preventDefault();
 
             var form = $(this);
-            var stage = form.data('stage');
             var formData = new FormData(this);
 
             $.ajax({
-                url: '{{ route("admin.lessons.stages.checkpoint-corpus.store", ["lesson" => $lesson->id, "stage" => "_stage_"]) }}'.replace('_stage_', stage),
+            url: '{{ route("admin.lessons.checkpoint.corpus.store", ["lesson" => $lesson->id]) }}',
                 method: 'POST',
                 data: formData,
                 headers: {
@@ -988,9 +867,9 @@
                 contentType: false,
                 success: function(response) {
                     var corpus = response.data;
-                    var list = $('.checkpoint-corpus-list[data-stage="' + stage + '"]');
-                    list.find('.no-checkpoint-corpus').remove();
-                    list.prepend(renderCheckpointCorpusItem(corpus, stage));
+                    var list = $('.lesson-checkpoint-corpus-list');
+                    list.find('.no-lesson-checkpoint-corpus').remove();
+                    list.prepend(renderCheckpointCorpusItem(corpus));
                     form[0].reset();
                     form.find('[name="sort_order"]').val('1');
                     alert(response.message || 'Checkpoint corpus uploaded.');
@@ -1003,9 +882,8 @@
             });
         });
 
-        $(document).on('click', '.delete-checkpoint-corpus', function() {
-            var item = $(this).closest('.checkpoint-corpus-item');
-            var stage = item.data('stage');
+        $(document).on('click', '.delete-lesson-checkpoint-corpus', function() {
+            var item = $(this).closest('.lesson-checkpoint-corpus-item');
             var corpusId = item.data('id');
 
             if (!confirm('Delete this checkpoint corpus file?')) {
@@ -1013,18 +891,18 @@
             }
 
             $.ajax({
-                url: '{{ route("admin.lessons.stages.checkpoint-corpus.destroy", ["lesson" => $lesson->id, "stage" => "_stage_", "corpus" => "_corpus_"]) }}'.replace('_stage_', stage).replace('_corpus_', corpusId),
+                url: '{{ route("admin.lessons.checkpoint.corpus.destroy", ["lesson" => $lesson->id, "corpus" => "_corpus_"]) }}'.replace('_corpus_', corpusId),
                 method: 'POST',
                 data: {
                     _token: '{{ csrf_token() }}',
                     _method: 'DELETE'
                 },
                 success: function(response) {
-                    var list = item.closest('.checkpoint-corpus-list');
+                    var list = item.closest('.lesson-checkpoint-corpus-list');
                     item.remove();
 
-                    if (list.find('.checkpoint-corpus-item').length === 0) {
-                        list.append('<p class="no-checkpoint-corpus text-muted mb-0">No checkpoint corpus uploaded yet.</p>');
+                    if (list.find('.lesson-checkpoint-corpus-item').length === 0) {
+                        list.append('<p class="no-lesson-checkpoint-corpus text-muted mb-0">No lesson knowledge corpus uploaded yet.</p>');
                     }
 
                     alert(response.message || 'Checkpoint corpus deleted.');
@@ -1036,9 +914,8 @@
             });
         });
 
-        $(document).on('click', '.reprocess-checkpoint-corpus', function() {
-            var item = $(this).closest('.checkpoint-corpus-item');
-            var stage = item.data('stage');
+        $(document).on('click', '.reprocess-lesson-checkpoint-corpus', function() {
+            var item = $(this).closest('.lesson-checkpoint-corpus-item');
             var corpusId = item.data('id');
             var button = $(this);
 
@@ -1049,17 +926,17 @@
             button.prop('disabled', true).text('Reprocessing...');
 
             $.ajax({
-                url: '{{ route("admin.lessons.stages.checkpoint-corpus.reprocess", ["lesson" => $lesson->id, "stage" => "_stage_", "corpus" => "_corpus_"]) }}'.replace('_stage_', stage).replace('_corpus_', corpusId),
+                url: '{{ route("admin.lessons.checkpoint.corpus.reprocess", ["lesson" => $lesson->id, "corpus" => "_corpus_"]) }}'.replace('_corpus_', corpusId),
                 method: 'POST',
                 data: {
                     _token: '{{ csrf_token() }}',
                 },
                 success: function(response) {
                     var corpus = response.data;
-                    item.replaceWith(renderCheckpointCorpusItem(corpus, stage));
+                    item.replaceWith(renderCheckpointCorpusItem(corpus));
                     alert(response.message || 'Checkpoint corpus reprocessing started.');
                     // Start polling for status updates
-                    pollCorpusStatus(stage, corpusId);
+                    pollCorpusStatus(corpusId);
                 },
                 error: function(xhr) {
                     button.prop('disabled', false).text('Retry');
@@ -1072,7 +949,7 @@
         // Polling for checkpoint corpus status updates
         var corpusPollingIntervals = {};
 
-        function pollCorpusStatus(stage, corpusId, maxAttempts = 60) {
+        function pollCorpusStatus(corpusId, maxAttempts = 60) {
             if (corpusPollingIntervals[corpusId]) {
                 clearInterval(corpusPollingIntervals[corpusId]);
             }
@@ -1083,17 +960,17 @@
                 attempts++;
 
                 $.ajax({
-                    url: '{{ route("admin.lessons.stages.checkpoint-corpus.status", ["lesson" => $lesson->id, "stage" => "_stage_", "corpus" => "_corpus_"]) }}'.replace('_stage_', stage).replace('_corpus_', corpusId),
+                    url: '{{ route("admin.lessons.checkpoint.corpus.status", ["lesson" => $lesson->id, "corpus" => "_corpus_"]) }}'.replace('_corpus_', corpusId),
                     method: 'GET',
                     success: function(response) {
-                        var item = $('.checkpoint-corpus-item[data-id="' + corpusId + '"][data-stage="' + stage + '"]');
+                        var item = $('.lesson-checkpoint-corpus-item[data-id="' + corpusId + '"]');
                         if (!item.length) return;
 
                         var currentStatus = item.data('status');
                         var newStatus = response.processing_status;
 
                         // Update status badge
-                        var statusBadge = item.find('.corpus-status-badge');
+                        var statusBadge = item.find('.lesson-corpus-status-badge');
                         var statusClass = newStatus === 'completed'
                             ? 'bg-success'
                             : (newStatus === 'failed' ? 'bg-danger' : 'bg-warning text-dark');
@@ -1105,11 +982,11 @@
                         item.data('status', newStatus);
 
                         // Update actions buttons
-                        var actions = item.find('.corpus-actions');
+                        var actions = item.find('.lesson-corpus-actions');
                         if (newStatus === 'completed') {
-                            actions.html('<a href="' + escapeHtml(response.url) + '" target="_blank" class="btn btn-sm btn-outline-secondary">View</a><button type="button" class="btn btn-sm btn-outline-danger delete-checkpoint-corpus">Delete</button>');
+                            actions.html('<a href="' + escapeHtml(response.url) + '" target="_blank" class="btn btn-sm btn-outline-secondary">View</a><button type="button" class="btn btn-sm btn-outline-danger delete-lesson-checkpoint-corpus">Delete</button>');
                         } else if (newStatus === 'failed') {
-                            actions.html('<button type="button" class="btn btn-sm btn-outline-warning reprocess-checkpoint-corpus" title="Retry this corpus upload">Retry</button><button type="button" class="btn btn-sm btn-outline-danger delete-checkpoint-corpus">Delete</button>');
+                            actions.html('<button type="button" class="btn btn-sm btn-outline-warning reprocess-lesson-checkpoint-corpus" title="Retry this corpus upload">Retry</button><button type="button" class="btn btn-sm btn-outline-danger delete-lesson-checkpoint-corpus">Delete</button>');
                             if (response.error_message) {
                                 var errorDiv = item.find('.small.text-danger');
                                 if (errorDiv.length) {
@@ -1131,14 +1008,12 @@
         }
 
         // Auto-start polling for any pending corpus uploads on page load
-        $.each(['explore', 'explain', 'elaborate'], function(_, stage) {
-            $('.checkpoint-corpus-item[data-stage="' + stage + '"]').each(function() {
-                var status = $(this).data('status');
-                var corpusId = $(this).data('id');
-                if (status === 'pending' || status === 'processing') {
-                    pollCorpusStatus(stage, corpusId);
-                }
-            });
+        $('.lesson-checkpoint-corpus-item').each(function() {
+            var status = $(this).data('status');
+            var corpusId = $(this).data('id');
+            if (status === 'pending' || status === 'processing') {
+                pollCorpusStatus(corpusId);
+            }
         });
 
         // Upload media (AJAX)
@@ -1178,105 +1053,6 @@
                     debugAjaxError('Stage media upload', xhr, formData);
                     var message = extractAjaxAlertMessage(xhr, 'Upload failed. Check console for details.');
                     alert('Upload failed: ' + message);
-                }
-            });
-        });
-
-        $('.misconception-form').on('submit', function(e) {
-            e.preventDefault();
-            var form = $(this);
-            var stage = form.data('stage');
-            var misconceptionId = form.find('[name="misconception_id"]').val();
-            var isEditing = !!misconceptionId;
-            var url = isEditing
-                ? '{{ route("admin.lessons.stages.misconceptions.update", ["lesson" => $lesson->id, "stage" => "_stage_", "misconception" => "_misconception_"]) }}'.replace('_stage_', stage).replace('_misconception_', misconceptionId)
-                : '{{ route("admin.lessons.stages.misconceptions.store", ["lesson" => $lesson->id, "stage" => "_stage_"]) }}'.replace('_stage_', stage);
-            var payload = form.serializeArray();
-
-            if (isEditing) {
-                payload.push({ name: '_method', value: 'PATCH' });
-            }
-
-            $.ajax({
-                url: url,
-                method: 'POST',
-                data: $.param(payload),
-                success: function(response) {
-                    var misconception = response.data;
-                    var list = $('.misconception-list[data-stage="' + stage + '"]');
-                    list.find('.no-misconception').remove();
-
-                    if (isEditing) {
-                        list.find('.misconception-item[data-id="' + misconception.id + '"]').replaceWith(renderMisconceptionItem(misconception, stage));
-                    } else {
-                        list.prepend(renderMisconceptionItem(misconception, stage));
-                    }
-
-                    resetMisconceptionForm(form);
-                    alert(isEditing ? 'Misconception item updated.' : 'Misconception item saved.');
-                },
-                error: function(xhr) {
-                    var message = 'Unknown error';
-                    if (xhr.responseJSON) {
-                        message = xhr.responseJSON.message || xhr.responseJSON.error || 'Validation failed';
-                    }
-                    alert('Error saving misconception: ' + message);
-                }
-            });
-        });
-
-        $(document).on('click', '.edit-misconception', function() {
-            var item = $(this).closest('.misconception-item');
-            var stage = item.data('stage');
-            var form = $('.misconception-form[data-stage="' + stage + '"]');
-
-            form.find('[name="misconception_id"]').val(item.data('id'));
-            form.find('[name="concept_tag"]').val(item.data('concept-tag'));
-            form.find('[name="label"]').val(item.data('label'));
-            form.find('[name="description"]').val(item.data('description'));
-            form.find('[name="correct_concept"]').val(item.data('correct-concept'));
-            form.find('[name="remediation_hint"]').val(item.data('remediation-hint'));
-            form.find('[name="status"]').val(item.data('status'));
-            form.find('.misconception-submit').text('Update Item');
-            form.find('.misconception-cancel').removeClass('d-none');
-
-            $('html, body').animate({
-                scrollTop: form.offset().top - 120
-            }, 200);
-        });
-
-        $('.misconception-cancel').on('click', function() {
-            resetMisconceptionForm($(this).closest('.misconception-form'));
-        });
-
-        $(document).on('click', '.delete-misconception', function() {
-            var item = $(this).closest('.misconception-item');
-            var stage = item.data('stage');
-            var id = item.data('id');
-
-            if (!confirm('Delete this misconception item?')) {
-                return;
-            }
-
-            $.ajax({
-                url: '{{ route("admin.lessons.stages.misconceptions.destroy", ["lesson" => $lesson->id, "stage" => "_stage_", "misconception" => "_misconception_"]) }}'.replace('_stage_', stage).replace('_misconception_', id),
-                method: 'POST',
-                data: {
-                    _token: '{{ csrf_token() }}',
-                    _method: 'DELETE'
-                },
-                success: function() {
-                    var list = item.closest('.misconception-list');
-                    item.remove();
-                    if (list.find('.misconception-item').length === 0) {
-                        list.append('<p class="no-misconception text-muted mb-0">No misconception items yet.</p>');
-                    }
-                    resetMisconceptionForm($('.misconception-form[data-stage="' + stage + '"]'));
-                    alert('Misconception item deleted.');
-                },
-                error: function(xhr) {
-                    var message = (xhr.responseJSON && (xhr.responseJSON.message || xhr.responseJSON.error)) ? (xhr.responseJSON.message || xhr.responseJSON.error) : 'Unknown error';
-                    alert('Error deleting misconception: ' + message);
                 }
             });
         });

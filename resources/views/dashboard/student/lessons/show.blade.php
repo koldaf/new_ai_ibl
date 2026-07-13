@@ -244,6 +244,7 @@
                         </span>
                     </div>
                     <div class="card-body">
+                        <p class="small text-muted mb-3">Checkpoint questions may come from teacher-supplied prompts for this lesson.</p>
                         <p class="fw-semibold mb-3">{{ $engageMcqQuestion->question }}</p>
 
                         @if(!$progress->engage_completed)
@@ -279,6 +280,114 @@
                         </div>
                     </div>
                 </div>
+            @endif
+
+            <!-- Mark as Complete Button (except evaluate if not done yet) -->
+            @if(!$progress->{$stage.'_completed'} && $stage != 'evaluate')
+                @if($stage === 'engage')
+                    @if($engageMode === 'chat')
+                        <div class="mb-2 small text-muted" id="engage-complete-helper">
+                            @if($canMarkEngageComplete)
+                                Denzy has marked this Engage discussion as ready for completion.
+                            @else
+                                Continue the Engage discussion until Denzy marks it ready for completion.
+                            @endif
+                        </div>
+                        <button class="btn btn-success mark-complete" data-stage="{{ $stage }}" id="engage-complete-button" {{ $canMarkEngageComplete ? '' : 'disabled' }}>
+                            Mark {{ ucfirst($stage) }} as Complete
+                        </button>
+                    @else
+                        <p class="text-info mb-0">Submit the checkpoint above to complete the Engage stage.</p>
+                    @endif
+                @elseif($stage === 'explore')
+                    {{-- Explore checkpoint widget --}}
+                    @php $stageCheckpointDone = $checkpointStatus['explore'] ?? false; @endphp
+                    <div class="card mb-4 shadow-sm border-0" id="explore-checkpoint-card">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <span class="fw-semibold"><i class="fas fa-robot me-2 text-secondary"></i>Explore Checkpoint</span>
+                            <span class="badge {{ $stageCheckpointDone ? 'bg-success' : 'bg-secondary' }}" id="explore-checkpoint-badge">
+                                {{ $stageCheckpointDone ? 'Checkpoint passed' : 'In progress' }}
+                            </span>
+                        </div>
+                        <div class="card-body">
+                            <p class="small text-muted mb-3">Checkpoint questions may come from teacher-supplied prompts for this lesson.</p>
+                            <div id="explore-checkpoint-messages" class="border rounded bg-light p-3 mb-3" style="max-height: 340px; overflow-y: auto;">
+                                @if(!$stageCheckpointDone)
+                                    <div class="alert alert-info mb-0" id="explore-checkpoint-placeholder">
+                                        Denzy will post a reflection question here to assess your understanding.
+                                    </div>
+                                @else
+                                    <div class="alert alert-success mb-0">You have passed the Explore checkpoint.</div>
+                                @endif
+                            </div>
+                            @if(!$stageCheckpointDone && !$progress->explore_completed)
+                                <form id="explore-checkpoint-form">
+                                    @csrf
+                                    <div class="mb-3">
+                                        <label for="explore-checkpoint-input" class="form-label">Your answer</label>
+                                        <textarea id="explore-checkpoint-input" class="form-control" rows="3" placeholder="Type your answer here..." required disabled></textarea>
+                                    </div>
+                                    <button class="btn btn-primary" type="submit" id="explore-checkpoint-submit" disabled>Send Answer</button>
+                                </form>
+                            @endif
+                        </div>
+                    </div>
+
+                    @if($exploreActivities->count() > 0)
+                        <div class="mb-2 small text-muted" id="explore-complete-helper">
+                            {{ ($allExploreActivitiesCompleted && $stageCheckpointDone) ? 'All Explore activities and checkpoint are complete.' : 'Finish all Explore activities and the checkpoint before marking this stage as complete.' }}
+                        </div>
+                    @endif
+                    <button class="btn btn-success mark-complete" data-stage="{{ $stage }}" id="explore-complete-button" {{ ($allExploreActivitiesCompleted && $stageCheckpointDone) ? '' : 'disabled' }}>
+                        Mark {{ ucfirst($stage) }} as Complete
+                    </button>
+                @elseif(in_array($stage, ['explain', 'elaborate']))
+                    {{-- Checkpoint widget for explain / elaborate --}}
+                    @php $stageCheckpointDone = $checkpointStatus[$stage] ?? false; @endphp
+                    <div class="card mb-4 shadow-sm border-0" id="{{ $stage }}-checkpoint-card">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <span class="fw-semibold"><i class="fas fa-robot me-2 text-secondary"></i>{{ ucfirst($stage) }} Checkpoint</span>
+                            <span class="badge {{ $stageCheckpointDone ? 'bg-success' : 'bg-secondary' }}" id="{{ $stage }}-checkpoint-badge">
+                                {{ $stageCheckpointDone ? 'Checkpoint passed' : 'In progress' }}
+                            </span>
+                        </div>
+                        <div class="card-body">
+                            <p class="small text-muted mb-3">Checkpoint questions may come from teacher-supplied prompts for this lesson.</p>
+                            <div id="{{ $stage }}-checkpoint-messages" class="border rounded bg-light p-3 mb-3" style="max-height: 340px; overflow-y: auto;">
+                                @if(!$stageCheckpointDone)
+                                    <div class="alert alert-info mb-0" id="{{ $stage }}-checkpoint-placeholder">
+                                        Denzy will post a reflection question here to assess your understanding.
+                                    </div>
+                                @else
+                                    <div class="alert alert-success mb-0">You have passed the {{ ucfirst($stage) }} checkpoint.</div>
+                                @endif
+                            </div>
+                            @if(!$stageCheckpointDone && !$progress->{$stage.'_completed'})
+                                <form id="{{ $stage }}-checkpoint-form">
+                                    @csrf
+                                    <div class="mb-3">
+                                        <label for="{{ $stage }}-checkpoint-input" class="form-label">Your answer</label>
+                                        <textarea id="{{ $stage }}-checkpoint-input" class="form-control" rows="3" placeholder="Type your answer here..." required disabled></textarea>
+                                    </div>
+                                    <button class="btn btn-primary" type="submit" id="{{ $stage }}-checkpoint-submit" disabled>Send Answer</button>
+                                </form>
+                            @endif
+                        </div>
+                    </div>
+
+                    <div class="mb-2 small text-muted" id="{{ $stage }}-complete-helper">
+                        {{ $stageCheckpointDone ? 'Checkpoint passed. You may now mark this stage complete.' : 'Complete the checkpoint discussion above before marking this stage as complete.' }}
+                    </div>
+                    <button class="btn btn-success mark-complete" data-stage="{{ $stage }}" id="{{ $stage }}-complete-button" {{ $stageCheckpointDone ? '' : 'disabled' }}>
+                        Mark {{ ucfirst($stage) }} as Complete
+                    </button>
+                @else
+                    <button class="btn btn-success mark-complete" data-stage="{{ $stage }}">Mark {{ ucfirst($stage) }} as Complete</button>
+                @endif
+            @elseif($stage == 'evaluate' && $quizQuestions->count() > 0 && !$progress->evaluate_completed)
+                <p class="text-info">Complete the quiz above to finish this lesson.</p>
+            @elseif($stage == 'evaluate' && $progress->evaluate_completed)
+                <div class="alert alert-success">You have completed the evaluation.</div>
             @endif
 
             @php
@@ -335,112 +444,6 @@
                     </div>
                 </div>
             </div>
-
-            <!-- Mark as Complete Button (except evaluate if not done yet) -->
-            @if(!$progress->{$stage.'_completed'} && $stage != 'evaluate')
-                @if($stage === 'engage')
-                    @if($engageMode === 'chat')
-                        <div class="mb-2 small text-muted" id="engage-complete-helper">
-                            @if($canMarkEngageComplete)
-                                Denzy has marked this Engage discussion as ready for completion.
-                            @else
-                                Continue the Engage discussion until Denzy marks it ready for completion.
-                            @endif
-                        </div>
-                        <button class="btn btn-success mark-complete" data-stage="{{ $stage }}" id="engage-complete-button" {{ $canMarkEngageComplete ? '' : 'disabled' }}>
-                            Mark {{ ucfirst($stage) }} as Complete
-                        </button>
-                    @else
-                        <p class="text-info mb-0">Submit the checkpoint above to complete the Engage stage.</p>
-                    @endif
-                @elseif($stage === 'explore')
-                    {{-- Explore checkpoint widget --}}
-                    @php $stageCheckpointDone = $checkpointStatus['explore'] ?? false; @endphp
-                    <div class="card mb-4 shadow-sm border-0" id="explore-checkpoint-card">
-                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                            <span class="fw-semibold"><i class="fas fa-robot me-2 text-secondary"></i>Explore Checkpoint</span>
-                            <span class="badge {{ $stageCheckpointDone ? 'bg-success' : 'bg-secondary' }}" id="explore-checkpoint-badge">
-                                {{ $stageCheckpointDone ? 'Checkpoint passed' : 'In progress' }}
-                            </span>
-                        </div>
-                        <div class="card-body">
-                            <div id="explore-checkpoint-messages" class="border rounded bg-light p-3 mb-3" style="max-height: 340px; overflow-y: auto;">
-                                @if(!$stageCheckpointDone)
-                                    <div class="alert alert-info mb-0" id="explore-checkpoint-placeholder">
-                                        Denzy will post a reflection question here to assess your understanding.
-                                    </div>
-                                @else
-                                    <div class="alert alert-success mb-0">You have passed the Explore checkpoint.</div>
-                                @endif
-                            </div>
-                            @if(!$stageCheckpointDone && !$progress->explore_completed)
-                                <form id="explore-checkpoint-form">
-                                    @csrf
-                                    <div class="mb-3">
-                                        <label for="explore-checkpoint-input" class="form-label">Your answer</label>
-                                        <textarea id="explore-checkpoint-input" class="form-control" rows="3" placeholder="Type your answer here..." required disabled></textarea>
-                                    </div>
-                                    <button class="btn btn-primary" type="submit" id="explore-checkpoint-submit" disabled>Send Answer</button>
-                                </form>
-                            @endif
-                        </div>
-                    </div>
-
-                    @if($exploreActivities->count() > 0)
-                        <div class="mb-2 small text-muted" id="explore-complete-helper">
-                            {{ ($allExploreActivitiesCompleted && $stageCheckpointDone) ? 'All Explore activities and checkpoint are complete.' : 'Finish all Explore activities and the checkpoint before marking this stage as complete.' }}
-                        </div>
-                    @endif
-                    <button class="btn btn-success mark-complete" data-stage="{{ $stage }}" id="explore-complete-button" {{ ($allExploreActivitiesCompleted && $stageCheckpointDone) ? '' : 'disabled' }}>
-                        Mark {{ ucfirst($stage) }} as Complete
-                    </button>
-                @elseif(in_array($stage, ['explain', 'elaborate']))
-                    {{-- Checkpoint widget for explain / elaborate --}}
-                    @php $stageCheckpointDone = $checkpointStatus[$stage] ?? false; @endphp
-                    <div class="card mb-4 shadow-sm border-0" id="{{ $stage }}-checkpoint-card">
-                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                            <span class="fw-semibold"><i class="fas fa-robot me-2 text-secondary"></i>{{ ucfirst($stage) }} Checkpoint</span>
-                            <span class="badge {{ $stageCheckpointDone ? 'bg-success' : 'bg-secondary' }}" id="{{ $stage }}-checkpoint-badge">
-                                {{ $stageCheckpointDone ? 'Checkpoint passed' : 'In progress' }}
-                            </span>
-                        </div>
-                        <div class="card-body">
-                            <div id="{{ $stage }}-checkpoint-messages" class="border rounded bg-light p-3 mb-3" style="max-height: 340px; overflow-y: auto;">
-                                @if(!$stageCheckpointDone)
-                                    <div class="alert alert-info mb-0" id="{{ $stage }}-checkpoint-placeholder">
-                                        Denzy will post a reflection question here to assess your understanding.
-                                    </div>
-                                @else
-                                    <div class="alert alert-success mb-0">You have passed the {{ ucfirst($stage) }} checkpoint.</div>
-                                @endif
-                            </div>
-                            @if(!$stageCheckpointDone && !$progress->{$stage.'_completed'})
-                                <form id="{{ $stage }}-checkpoint-form">
-                                    @csrf
-                                    <div class="mb-3">
-                                        <label for="{{ $stage }}-checkpoint-input" class="form-label">Your answer</label>
-                                        <textarea id="{{ $stage }}-checkpoint-input" class="form-control" rows="3" placeholder="Type your answer here..." required disabled></textarea>
-                                    </div>
-                                    <button class="btn btn-primary" type="submit" id="{{ $stage }}-checkpoint-submit" disabled>Send Answer</button>
-                                </form>
-                            @endif
-                        </div>
-                    </div>
-
-                    <div class="mb-2 small text-muted" id="{{ $stage }}-complete-helper">
-                        {{ $stageCheckpointDone ? 'Checkpoint passed. You may now mark this stage complete.' : 'Complete the checkpoint discussion above before marking this stage as complete.' }}
-                    </div>
-                    <button class="btn btn-success mark-complete" data-stage="{{ $stage }}" id="{{ $stage }}-complete-button" {{ $stageCheckpointDone ? '' : 'disabled' }}>
-                        Mark {{ ucfirst($stage) }} as Complete
-                    </button>
-                @else
-                    <button class="btn btn-success mark-complete" data-stage="{{ $stage }}">Mark {{ ucfirst($stage) }} as Complete</button>
-                @endif
-            @elseif($stage == 'evaluate' && $quizQuestions->count() > 0 && !$progress->evaluate_completed)
-                <p class="text-info">Complete the quiz above to finish this lesson.</p>
-            @elseif($stage == 'evaluate' && $progress->evaluate_completed)
-                <div class="alert alert-success">You have completed the evaluation.</div>
-            @endif
         </div>
         @endforeach
     </div>
@@ -1100,6 +1103,41 @@ $(document).ready(function() {
 @push('styles')
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 <style>
+    .content-inner {
+        animation: fadeInLessonOnly 0.4s ease both;
+    }
+
+    @keyframes fadeInLessonOnly {
+        from {
+            opacity: 0;
+        }
+
+        to {
+            opacity: 1;
+        }
+    }
+
+    .denzy-widget {
+        position: fixed !important;
+        right: 1.25rem !important;
+        bottom: 1.25rem !important;
+        z-index: 1200;
+    }
+
+    @media (max-width: 768px) {
+        .denzy-widget {
+            right: 0.9rem !important;
+            bottom: 0.9rem !important;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .denzy-widget {
+            right: 0.7rem !important;
+            bottom: 0.7rem !important;
+        }
+    }
+
     .typing-loader-label {
         font-weight: 500;
     }

@@ -17,6 +17,47 @@ class StudentCheckpointFlowTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
+    public function student_engage_start_prefers_pre_supplied_checkpoint_question(): void
+    {
+        $student = User::query()->forceCreate($this->userPayload('Engage Student', 'student', 'engage-student@example.test'));
+        $lesson = Lesson::create([
+            'title' => 'States of Matter',
+            'description' => 'Engage checkpoint question preference',
+        ]);
+
+        LessonCheckpointQuestion::create([
+            'lesson_id' => $lesson->id,
+            'stage' => 'engage',
+            'question_text' => 'Before we begin, what do you already know about solids, liquids, and gases?',
+            'is_active' => true,
+            'sort_order' => 1,
+            'created_by' => User::query()->first()?->id ?? 1,
+        ]);
+
+        $response = $this->actingAs($student)
+            ->postJson(route('student.lessons.ai.ask', $lesson), [
+                'question' => '__engage_start__',
+                'stage' => 'engage',
+                'intent' => 'start',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('stage', 'engage')
+            ->assertJsonPath('intent', 'start')
+            ->assertJsonPath('answer', 'Before we begin, what do you already know about solids, liquids, and gases?');
+
+        $this->assertDatabaseHas('ai_chat_message', [
+            'user_id' => $student->id,
+            'lesson_id' => $lesson->id,
+            'stage' => 'engage',
+            'question' => '__engage_start__',
+            'answer' => 'Before we begin, what do you already know about solids, liquids, and gases?',
+        ]);
+    }
+
+    #[Test]
     public function student_can_start_checkpoint_for_explore_stage(): void
     {
         $student = User::query()->forceCreate($this->userPayload('Test Student', 'student', 'student@example.test'));
@@ -58,6 +99,99 @@ class StudentCheckpointFlowTest extends TestCase
             'question' => '__checkpoint_start__',
             'answer' => 'What are the inputs to photosynthesis?',
             'engage_status' => 'in_progress',
+        ]);
+    }
+
+    #[Test]
+    public function checkpoint_start_ignores_inactive_pre_supplied_questions(): void
+    {
+        $student = User::query()->forceCreate($this->userPayload('Checkpoint Student', 'student', 'checkpoint-student@example.test'));
+        $lesson = Lesson::create([
+            'title' => 'Cell Biology',
+            'description' => 'Checkpoint active-question filtering',
+        ]);
+
+        LessonCheckpointQuestion::create([
+            'lesson_id' => $lesson->id,
+            'stage' => 'explore',
+            'question_text' => 'INACTIVE: What is the role of the nucleus?',
+            'is_active' => false,
+            'sort_order' => 1,
+            'created_by' => User::query()->first()?->id ?? 1,
+        ]);
+
+        LessonCheckpointQuestion::create([
+            'lesson_id' => $lesson->id,
+            'stage' => 'explore',
+            'question_text' => 'ACTIVE: What patterns did you observe in the cell diagram?',
+            'is_active' => true,
+            'sort_order' => 2,
+            'created_by' => User::query()->first()?->id ?? 1,
+        ]);
+
+        $response = $this->actingAs($student)
+            ->postJson(route('student.lessons.ai.ask', $lesson), [
+                'question' => '__checkpoint_start__',
+                'stage' => 'explore',
+                'intent' => 'start',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('stage', 'explore')
+            ->assertJsonPath('intent', 'start')
+            ->assertJsonPath('answer', 'ACTIVE: What patterns did you observe in the cell diagram?');
+
+        $this->assertDatabaseMissing('ai_chat_message', [
+            'user_id' => $student->id,
+            'lesson_id' => $lesson->id,
+            'stage' => 'explore',
+            'question' => '__checkpoint_start__',
+            'answer' => 'INACTIVE: What is the role of the nucleus?',
+        ]);
+    }
+
+    #[Test]
+    public function checkpoint_start_falls_back_when_no_active_pre_supplied_question_exists(): void
+    {
+        $student = User::query()->forceCreate($this->userPayload('Fallback Student', 'student', 'fallback-student@example.test'));
+        $lesson = Lesson::create([
+            'title' => 'Forces and Motion',
+            'description' => 'Fallback checkpoint prompt behavior',
+        ]);
+
+        LessonCheckpointQuestion::create([
+            'lesson_id' => $lesson->id,
+            'stage' => 'explore',
+            'question_text' => 'INACTIVE: Which force acts downward?',
+            'is_active' => false,
+            'sort_order' => 1,
+            'created_by' => User::query()->first()?->id ?? 1,
+        ]);
+
+        $response = $this->actingAs($student)
+            ->postJson(route('student.lessons.ai.ask', $lesson), [
+                'question' => '__checkpoint_start__',
+                'stage' => 'explore',
+                'intent' => 'start',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('stage', 'explore')
+            ->assertJsonPath('intent', 'start')
+            ->assertJsonPath('answer', 'Fallback Student, what patterns or observations did you make while exploring the material on the concept?');
+
+        $this->assertDatabaseHas('ai_chat_message', [
+            'user_id' => $student->id,
+            'lesson_id' => $lesson->id,
+            'stage' => 'explore',
+            'question' => '__checkpoint_start__',
+            'answer' => 'Fallback Student, what patterns or observations did you make while exploring the material on the concept?',
+            'context_source' => 'none',
+            'retrieval_mode' => 'none',
         ]);
     }
 

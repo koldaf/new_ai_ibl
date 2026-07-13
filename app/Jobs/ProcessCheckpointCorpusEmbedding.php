@@ -165,7 +165,7 @@ class ProcessCheckpointCorpusEmbedding implements ShouldQueue
 
     private function persistToVectorStore(array $embeddedDocuments): string
     {
-        $dir = storage_path('app/vector-store/checkpoints/lesson-' . $this->corpus->lesson_id . '/' . $this->corpus->stage);
+        $dir = storage_path('app/vector-store/checkpoints/lesson-' . $this->corpus->lesson_id . '/lesson-level');
         $file = $dir . '/corpus-' . $this->corpus->id . '.json';
 
         File::ensureDirectoryExists($dir, 0755);

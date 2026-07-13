@@ -58,6 +58,30 @@ Route::prefix('admin')
         Route::resource('lessons', LessonController::class)
             ->except(['show']);
 
+        Route::post('/editor-images', [LessonStageController::class, 'uploadEditorImage'])
+            ->name('editor-images.store');
+
+        // Lesson-level checkpoint management (centralized in lesson edit)
+        Route::prefix('lessons/{lesson}/checkpoint')
+            ->name('lessons.checkpoint.')
+            ->group(function () {
+                Route::post('/questions', [LessonStageController::class, 'storeLessonCheckpointQuestion'])
+                    ->name('questions.store');
+                Route::patch('/questions/{question}', [LessonStageController::class, 'updateLessonCheckpointQuestion'])
+                    ->name('questions.update');
+                Route::delete('/questions/{question}', [LessonStageController::class, 'destroyLessonCheckpointQuestion'])
+                    ->name('questions.destroy');
+
+                Route::post('/corpus', [LessonStageController::class, 'uploadLessonCheckpointCorpus'])
+                    ->name('corpus.store');
+                Route::delete('/corpus/{corpus}', [LessonStageController::class, 'destroyLessonCheckpointCorpus'])
+                    ->name('corpus.destroy');
+                Route::get('/corpus/{corpus}/status', [LessonStageController::class, 'getLessonCheckpointCorpusStatus'])
+                    ->name('corpus.status');
+                Route::post('/corpus/{corpus}/reprocess', [LessonStageController::class, 'reprocessLessonCheckpointCorpus'])
+                    ->name('corpus.reprocess');
+            });
+
         // Lesson stages — scoped under a lesson
         Route::prefix('lessons/{lesson}/stages')
             ->name('lessons.stages.')
@@ -87,20 +111,6 @@ Route::prefix('admin')
                     ->name('misconceptions.update');
                 Route::delete('/{stage}/misconceptions/{misconception}', [LessonStageController::class, 'destroyMisconception'])
                     ->name('misconceptions.destroy');
-                Route::post('/{stage}/checkpoint-questions', [LessonStageController::class, 'storeCheckpointQuestion'])
-                    ->name('checkpoint-questions.store');
-                Route::patch('/{stage}/checkpoint-questions/{question}', [LessonStageController::class, 'updateCheckpointQuestion'])
-                    ->name('checkpoint-questions.update');
-                Route::delete('/{stage}/checkpoint-questions/{question}', [LessonStageController::class, 'destroyCheckpointQuestion'])
-                    ->name('checkpoint-questions.destroy');
-                Route::post('/{stage}/checkpoint-corpus', [LessonStageController::class, 'uploadCheckpointCorpus'])
-                    ->name('checkpoint-corpus.store');
-                Route::delete('/{stage}/checkpoint-corpus/{corpus}', [LessonStageController::class, 'destroyCheckpointCorpus'])
-                    ->name('checkpoint-corpus.destroy');
-                Route::get('/{stage}/checkpoint-corpus/{corpus}/status', [LessonStageController::class, 'getCheckpointCorpusStatus'])
-                    ->name('checkpoint-corpus.status');
-                Route::post('/{stage}/checkpoint-corpus/{corpus}/reprocess', [LessonStageController::class, 'reprocessCheckpointCorpus'])
-                    ->name('checkpoint-corpus.reprocess');
                 Route::post('/{stage}/engage-mcq', [LessonStageController::class, 'upsertEngageMcq'])
                     ->name('engage-mcq.upsert');
                 Route::delete('/{stage}/engage-mcq', [LessonStageController::class, 'destroyEngageMcq'])
