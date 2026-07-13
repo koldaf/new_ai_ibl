@@ -208,7 +208,15 @@ function setupEditor(textarea) {
         content: textarea.value || '',
         editorProps: {
             handlePaste: (_view, event) => {
-                const clipboardItems = event.clipboardData?.items || [];
+                const clipboardData = event.clipboardData;
+                const html = clipboardData?.getData('text/html') || '';
+                const text = clipboardData?.getData('text/plain') || '';
+
+                if (html.trim() || text.trim()) {
+                    return false;
+                }
+
+                const clipboardItems = clipboardData?.items || [];
                 for (const item of clipboardItems) {
                     if (!item.type.startsWith('image/')) {
                         continue;

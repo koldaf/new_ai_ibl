@@ -17,7 +17,7 @@ return new class extends Migration
             $table->foreignId('misconception_id')->nullable()->after('misconception_source')->constrained('lesson_misconceptions')->nullOnDelete();
             $table->enum('engage_status', ['in_progress', 'complete', 'review_needed'])->nullable()->after('misconception_id');
             $table->string('completion_reason')->nullable()->after('engage_status');
-            $table->enum('context_source', ['rag', 'stage_text', 'none'])->nullable()->after('completion_reason');
+            $table->enum('context_source', ['rag', 'stage_text', 'teacher_question', 'none'])->nullable()->after('completion_reason');
             $table->enum('retrieval_mode', ['vector', 'non_vector', 'none'])->nullable()->after('context_source');
             $table->unsignedTinyInteger('turn_index')->nullable()->after('retrieval_mode');
             $table->foreignId('parent_message_id')->nullable()->after('turn_index')->constrained('ai_chat_message')->nullOnDelete();
