@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AiChatMessage;
 use App\Models\Lesson;
+use App\Models\LessonCheckpointCorpus;
 use App\Models\LessonCheckpointQuestion;
 use App\Models\LessonMisconception;
 use App\Models\MisconceptionEvent;
@@ -156,17 +157,20 @@ class EngageDecisionService
             return null;
         }
 
-        if (!$this->ragService->isReady($lesson->id) || !$this->ragService->isOllamaHealthy()) {
-            Log::warning('[EngageDecision] RAG service not ready or Ollama unhealthy, skipping RAG classification', [
+        if (!$this->ragService->isOllamaHealthy()) {
+            Log::warning('[EngageDecision] Ollama unhealthy, skipping RAG classification', [
                 'lesson_id' => $lesson->id,
-                'RAG Status' => $this->ragService->isOllamaHealthy(),
+                'ollama_healthy' => false,
             ]);
             return null;
         }
 
         try {
-            $context = $this->ragService->retrieveContextSafe($lesson, $answer, 4);
+            $context = $this->retrieveCheckpointCorpusContext($lesson, $answer);
             if ($context === '') {
+                Log::warning('[EngageDecision] No checkpoint corpus context found for engage RAG classification', [
+                    'lesson_id' => $lesson->id,
+                ]);
                 return null;
             }
 
@@ -240,6 +244,28 @@ class EngageDecisionService
 
             return null;
         }
+    }
+
+    private function retrieveCheckpointCorpusContext(Lesson $lesson, string $query): string
+    {
+        $paths = LessonCheckpointCorpus::query()
+            ->where('lesson_id', $lesson->id)
+            ->where('processing_status', 'completed')
+            ->whereNotNull('vector_store_path')
+            ->where(function ($queryBuilder) {
+                $queryBuilder->whereNull('stage')
+                    ->orWhere('stage', 'engage');
+            })
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->pluck('vector_store_path')
+            ->all();
+
+        if ($paths === []) {
+            return '';
+        }
+
+        return $this->ragService->retrieveContextFromVectorStoresSafe($paths, $query, 2, 4);
     }
 
     private function decodeRagJson(string $raw): ?array

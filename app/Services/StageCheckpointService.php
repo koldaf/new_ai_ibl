@@ -161,7 +161,7 @@ class StageCheckpointService
         $turnIndex = $totalAttempts;
 
         [$classification, $confidence, $feedback, $followUp] = $this->classifyAnswer(
-            $lesson, $answer, $stage, $userName
+            $lesson, $answer, $stage, $userName, $checkpointQuestion
         );
 
         $followupsUsed = $history->filter(fn ($row) => !empty($row->follow_up_question))->count();
@@ -239,7 +239,7 @@ class StageCheckpointService
     private function generateQuestionWithRag(Lesson $lesson, string $stage, array $stageConfig, string $userName): ?string
     {
         try {
-            $context = $this->ragService->retrieveContextSafe($lesson, $stageConfig['goal'], 4);
+            $context = $this->retrieveCheckpointContext($lesson, $stage, $stageConfig['goal']);
             if ($context === '') {
                 return null;
             }
@@ -271,7 +271,7 @@ class StageCheckpointService
         }
     }
 
-    private function classifyAnswer(Lesson $lesson, string $answer, string $stage, string $userName): array
+    private function classifyAnswer(Lesson $lesson, string $answer, string $stage, string $userName, ?AiChatMessage $checkpointQuestion = null): array
     {
         if (str_word_count($answer) < 4) {
             return ['off_topic', 0.30, 'Too short.', 'What key idea supports your answer?'];
@@ -286,9 +286,17 @@ class StageCheckpointService
             }
         }
 
-        $stageContent = optional($lesson->getStageContent($stage))->content;
-        $contextText = trim(strip_tags((string) $stageContent));
-        $tokens = $this->extractKeywords($contextText);
+        $fallbackContext = trim($context);
+
+        if ($fallbackContext === '' && $checkpointQuestion?->answer) {
+            $fallbackContext = trim((string) $checkpointQuestion->answer);
+        }
+
+        if ($fallbackContext === '') {
+            return ['off_topic', 0.40, 'Checkpoint corpus is unavailable.', 'Ask your teacher to upload checkpoint corpus.'];
+        }
+
+        $tokens = $this->extractKeywords($fallbackContext);
         $answerLower = Str::lower($answer);
         $hits = count(array_filter($tokens, fn ($t) => str_contains($answerLower, $t)));
         $ratio = $tokens ? $hits / count($tokens) : 0;

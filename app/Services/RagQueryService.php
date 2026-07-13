@@ -19,6 +19,8 @@ class RagQueryService
     private OllamaEmbeddingGenerator $embeddingGenerator;
     private string $llmModel;
     private string $ollamaUrl;
+    private int $ollamaRequestTimeout;
+    private int $ollamaHealthTimeout;
     /** Tracks the chunk count set by retrieveContext() so callLlm() logContext can include it. */
     private int $lastChunkCount = 0;
 
@@ -26,11 +28,14 @@ class RagQueryService
     {
         $this->embeddingGenerator = new OllamaEmbeddingGenerator(
             model: config('ollama.embedding_model', 'embeddinggemma'),
-            baseUrl: config('ollama.base_url', 'http://ollama:11434')
+            baseUrl: config('ollama.base_url', 'http://ollama:11434'),
+            timeout: (int) config('ollama.embedding_timeout', 120)
         );
 
         $this->llmModel = config('ollama.llm_model', 'qwen3:0.6b');
         $this->ollamaUrl = rtrim(config('ollama.base_url', 'http://ollama:11434'), '/');
+        $this->ollamaRequestTimeout = max(30, (int) config('ollama.request_timeout', 300));
+        $this->ollamaHealthTimeout = max(3, (int) config('ollama.health_timeout', 10));
     }
 
     /**
@@ -237,7 +242,7 @@ class RagQueryService
     {
         $callStart = microtime(true);
         try {
-            $response = Http::timeout(180)
+            $response = Http::timeout($this->ollamaRequestTimeout)
                 ->post("{$this->ollamaUrl}/api/generate", [
                     'model' => $this->llmModel,
                     'prompt' => $prompt,
@@ -446,7 +451,7 @@ class RagQueryService
     public function isOllamaHealthy(): bool
     {
         try {
-            $response = Http::timeout(5)->get("{$this->ollamaUrl}/api/tags");
+            $response = Http::timeout($this->ollamaHealthTimeout)->get("{$this->ollamaUrl}/api/tags");
             Log::debug('[RAG] Ollama health check response', [
                 'status' => $response->status(),
                 'body' => $response->body(),
@@ -469,7 +474,7 @@ class RagQueryService
     public function getOllamaModels(): array
     {
         try {
-            $response = Http::timeout(10)->get("{$this->ollamaUrl}/api/tags");
+            $response = Http::timeout($this->ollamaHealthTimeout)->get("{$this->ollamaUrl}/api/tags");
             
             if ($response->successful()) {
                 return $response->json()['models'] ?? [];

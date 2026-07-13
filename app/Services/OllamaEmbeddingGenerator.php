@@ -10,14 +10,16 @@ class OllamaEmbeddingGenerator implements EmbeddingGeneratorInterface
 {
     private string $baseUrl;
     private string $model;
+    private int $timeout;
     /**
      * Create a new class instance.
      */
-    public function __construct(string $model = 'embeddinggemma', string $baseUrl = 'http://ollama:11434')
+    public function __construct(string $model = 'embeddinggemma', string $baseUrl = 'http://ollama:11434', int $timeout = 60)
     {
         //
         $this->model = $model;
         $this->baseUrl = $baseUrl;
+        $this->timeout = max(10, $timeout);
 
     }
     /**
@@ -38,7 +40,7 @@ class OllamaEmbeddingGenerator implements EmbeddingGeneratorInterface
      */
     public function embedText(string $text): array
     {
-        $response = Http::timeout(60)
+        $response = Http::timeout($this->timeout)
             ->post("{$this->baseUrl}/api/embeddings", [
                 'model' => $this->model,
                 'prompt' => $text,
