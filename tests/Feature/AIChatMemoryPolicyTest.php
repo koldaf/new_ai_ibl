@@ -56,7 +56,7 @@ class AIChatMemoryPolicyTest extends TestCase
                 $this->assertSame($currentLesson->id, $lessonId);
                 $this->assertSame('explore', $stage);
                 $this->assertSame('Student One', $userName);
-                $this->assertSame(5, $topK);
+                $this->assertSame(3, $topK);
                 $this->assertFalse($memoryEnabled);
                 $this->assertStringContainsString('Current lesson question', $memoryContext);
                 $this->assertStringNotContainsString('Other lesson question', $memoryContext);

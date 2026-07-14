@@ -7,6 +7,7 @@ use App\Models\AppSetting;
 use App\Models\Lesson;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Str;
 
 class AiMemoryService
 {
@@ -15,7 +16,7 @@ class AiMemoryService
         return (bool) AppSetting::getValue('ai_memory_enabled', false);
     }
 
-    public function getHistoryForPrompt(User $user, Lesson $lesson, ?string $stage = null, int $limit = 6): Collection
+    public function getHistoryForPrompt(User $user, Lesson $lesson, ?string $stage = null, int $limit = 3): Collection
     {
         $query = AiChatMessage::query()
             ->where('user_id', $user->id)
@@ -46,8 +47,8 @@ class AiMemoryService
                 : ($message->lesson?->title ?: 'Previous lesson');
 
             $lines[] = "[{$lessonLabel} | Stage: {$message->stage}]";
-            $lines[] = 'Student: ' . trim((string) $message->question);
-            $lines[] = 'AI: ' . trim((string) $message->answer);
+            $lines[] = 'Student: ' . Str::limit(trim((string) $message->question), 200);
+            $lines[] = 'AI: ' . Str::limit(trim((string) $message->answer), 200);
         }
 
         return implode("\n", $lines);

@@ -51,7 +51,7 @@ class EngageDecisionService
             ->take(3)
             ->get();
 
-        $memoryHistory = $this->memoryService->getHistoryForPrompt($user, $lesson, 'engage', 4);
+        $memoryHistory = $this->memoryService->getHistoryForPrompt($user, $lesson, 'engage', 2);
         $memoryContext = $this->memoryService->buildPromptContext($memoryHistory, $lesson->id);
 
         $turnIndex = (int) $lessonHistory->count() + 1;
@@ -193,7 +193,7 @@ class EngageDecisionService
                 $memoryBlock .
                 "Student answer: {$answer}";
 
-            $raw = trim($this->ragService->callLlm($prompt, $system, 200, [
+            $raw = trim($this->ragService->callLlm($prompt, $system, 150, [
                 'caller'           => 'engage_decision',
                 'lesson_id'        => $lesson->id,
                 'stage'            => 'engage',
@@ -265,7 +265,7 @@ class EngageDecisionService
             return '';
         }
 
-        return $this->ragService->retrieveContextFromVectorStoresSafe($paths, $query, 2, 4);
+        return $this->ragService->retrieveContextFromVectorStoresSafe($paths, $query, 2, 2);
     }
 
     private function decodeRagJson(string $raw): ?array

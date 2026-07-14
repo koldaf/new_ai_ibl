@@ -129,7 +129,7 @@ class AIChatController extends Controller
                 $lesson->id,
                 $stage,
                 $user->name,
-                5,
+                3,
                 $memoryContext,
                 $this->memoryService->isEnabled()
             );

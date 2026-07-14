@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Lesson;
 use App\Models\LessonEmbedding;
 use App\Services\AiPerformanceLogger;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -54,7 +55,7 @@ class RagQueryService
         int $lessonId,
         ?string $stage = 'engage',
         ?string $userName = null,
-        int $topK = 5,
+        int $topK = 3,
         string $memoryContext = '',
         bool $memoryEnabled = false
     ): string {
@@ -450,20 +451,24 @@ class RagQueryService
      */
     public function isOllamaHealthy(): bool
     {
-        try {
-            $response = Http::timeout($this->ollamaHealthTimeout)->get("{$this->ollamaUrl}/api/tags");
-            Log::debug('[RAG] Ollama health check response', [
-                'status' => $response->status(),
-                'body' => $response->body(),
-                'success' => $response->successful(),
-            ]);
-            return $response->successful();
-        } catch (\Throwable $e) {
-            Log::warning('[RAG] Ollama health check failed', [
-                'error' => $e->getMessage()
-            ]);
-            return false;
-        }
+        // Every classification/RAG call checks this before hitting Ollama; caching it briefly
+        // avoids an extra /api/tags round trip per request under concurrent load.
+        return Cache::remember('ollama_health_check', 5, function () {
+            try {
+                $response = Http::timeout($this->ollamaHealthTimeout)->get("{$this->ollamaUrl}/api/tags");
+                Log::debug('[RAG] Ollama health check response', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                    'success' => $response->successful(),
+                ]);
+                return $response->successful();
+            } catch (\Throwable $e) {
+                Log::warning('[RAG] Ollama health check failed', [
+                    'error' => $e->getMessage()
+                ]);
+                return false;
+            }
+        });
     }
 
     /**
