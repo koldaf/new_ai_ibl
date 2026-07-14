@@ -47,14 +47,30 @@ class LoadTestController extends Controller
         $lessonId = (int) $validated['lesson_id'];
         $question = $validated['question'];
 
+        // PHP_BINARY points at php-fpm (not the CLI php) when this runs under
+        // PHP-FPM, which makes every spawned process fail silently with no
+        // output. Use a configurable CLI binary instead, and fail fast with a
+        // clear message rather than N generic per-user failures.
+        $phpBinary = config('load_test.php_binary', 'php');
+        $preflight = Process::timeout(15)->run([$phpBinary, base_path('artisan'), '--version']);
+
+        if ($preflight->failed()) {
+            return back()->withInput()->withErrors([
+                'concurrency' => "Could not execute '{$phpBinary}' to spawn load-test workers (exit {$preflight->exitCode()}). "
+                    . "This is usually because PHP_BINARY resolves to php-fpm under your web server, not the php CLI. "
+                    . "Set LOAD_TEST_PHP_BINARY in .env to the absolute path from `which php` on the server. "
+                    . 'Detail: ' . trim($preflight->errorOutput() ?: $preflight->output() ?: 'no output'),
+            ]);
+        }
+
         $batchStart = microtime(true);
 
-        $pool = Process::pool(function (Pool $pool) use ($concurrency, $lessonId, $question) {
+        $pool = Process::pool(function (Pool $pool) use ($concurrency, $lessonId, $question, $phpBinary) {
             for ($i = 1; $i <= $concurrency; $i++) {
                 $pool->as((string) $i)
                     ->timeout(300)
                     ->command([
-                        PHP_BINARY,
+                        $phpBinary,
                         base_path('artisan'),
                         'rag:loadtest-single',
                         (string) $lessonId,

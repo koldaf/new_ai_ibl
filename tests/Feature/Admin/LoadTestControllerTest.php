@@ -77,6 +77,25 @@ class LoadTestControllerTest extends TestCase
     }
 
     #[Test]
+    public function it_shows_a_clear_diagnostic_instead_of_spawning_workers_when_the_php_binary_is_unusable(): void
+    {
+        Process::fake([
+            '*--version*' => Process::result(errorOutput: 'exec failed: permission denied', exitCode: 126),
+        ]);
+
+        $admin = User::factory()->create(['role' => 'admin']);
+        $lesson = Lesson::create(['title' => 'Ready Lesson', 'description' => 'Test lesson', 'processing_status' => 'completed']);
+
+        $this->actingAs($admin)->post(route('admin.load-test.run'), [
+            'lesson_id' => $lesson->id,
+            'question' => 'What is the main idea?',
+            'concurrency' => 5,
+        ])->assertSessionHasErrors('concurrency');
+
+        Process::assertNotRan(fn ($process) => str_contains(implode(' ', $process->command), 'rag:loadtest-single'));
+    }
+
+    #[Test]
     public function it_rejects_concurrency_above_the_configured_maximum(): void
     {
         $admin = User::factory()->create(['role' => 'admin']);
