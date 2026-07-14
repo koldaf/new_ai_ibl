@@ -25,6 +25,14 @@ class RagQueryService
     /** Tracks the chunk count set by retrieveContext() so callLlm() logContext can include it. */
     private int $lastChunkCount = 0;
 
+    /** Raw timing/token metrics from the most recent callLlm() call, for callers that need them (e.g. load testing). */
+    private ?array $lastCallMetrics = null;
+
+    public function getLastCallMetrics(): ?array
+    {
+        return $this->lastCallMetrics;
+    }
+
     public function __construct()
     {
         $this->embeddingGenerator = new OllamaEmbeddingGenerator(
@@ -281,6 +289,17 @@ class RagQueryService
                 $wallClockMs,
                 array_merge(['caller' => 'rag_query', 'model_name' => $this->llmModel], $logContext)
             );
+
+            $evalDurationNs = $data['eval_duration'] ?? null;
+            $this->lastCallMetrics = [
+                'prompt_tokens' => $data['prompt_eval_count'] ?? null,
+                'gen_tokens' => $data['eval_count'] ?? null,
+                'ttft_ms' => isset($data['prompt_eval_duration']) ? round($data['prompt_eval_duration'] / 1_000_000, 2) : null,
+                'tps' => ($data['eval_count'] ?? 0) > 0 && $evalDurationNs > 0
+                    ? round($data['eval_count'] / ($evalDurationNs / 1_000_000_000), 2)
+                    : null,
+                'wall_ms' => round($wallClockMs, 2),
+            ];
 
             return trim($data['response']);
 

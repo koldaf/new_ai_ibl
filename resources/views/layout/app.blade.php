@@ -518,6 +518,13 @@
                 <i class="bi bi-speedometer2"></i>
                 <span>AI Monitor</span>
             </a>
+
+            {{-- Load Test --}}
+            <a href="{{ route('admin.load-test.index') }}"
+               class="nav-item-link {{ request()->routeIs('admin.load-test.*') ? 'active' : '' }}">
+                <i class="bi bi-lightning-charge"></i>
+                <span>Load Test</span>
+            </a>
             @endif
             @if(auth()->user()->role === 'student')
                 {{-- My Lessons --}}

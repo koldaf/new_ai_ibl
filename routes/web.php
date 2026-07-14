@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\LessonStageController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\AiPerformanceController;
+use App\Http\Controllers\Admin\LoadTestController;
 use App\Http\Controllers\Students\LessonController as StudentLessonController;
 use App\Http\Controllers\Students\QuizController;
 use App\Http\Controllers\Students\AIChatController;
@@ -124,6 +125,12 @@ Route::prefix('admin')
             ->name('ai-performance.live-stats');
         Route::get('/ai-performance/chart-data', [AiPerformanceController::class, 'chartData'])
             ->name('ai-performance.chart-data');
+
+        // Concurrent-user load testing against the real RAG pipeline
+        Route::get('/load-test', [LoadTestController::class, 'index'])
+            ->name('load-test.index');
+        Route::post('/load-test/run', [LoadTestController::class, 'run'])
+            ->name('load-test.run');
     });
 
 /*
