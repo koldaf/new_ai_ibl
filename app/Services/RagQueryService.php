@@ -19,6 +19,7 @@ class RagQueryService
 
     private OllamaEmbeddingGenerator $embeddingGenerator;
     private string $llmModel;
+    private string $classificationModel;
     private string $ollamaUrl;
     private int $ollamaRequestTimeout;
     private int $ollamaHealthTimeout;
@@ -33,6 +34,16 @@ class RagQueryService
         return $this->lastCallMetrics;
     }
 
+    /**
+     * Model to use for correctness-sensitive classification calls (grading student
+     * answers), as opposed to plain text generation which stays on the smaller/faster
+     * llm_model. Falls back to llm_model when no separate classification model is set.
+     */
+    public function getClassificationModel(): string
+    {
+        return $this->classificationModel;
+    }
+
     public function __construct()
     {
         $this->embeddingGenerator = new OllamaEmbeddingGenerator(
@@ -42,6 +53,7 @@ class RagQueryService
         );
 
         $this->llmModel = config('ollama.llm_model', 'qwen3:0.6b');
+        $this->classificationModel = config('ollama.classification_model', $this->llmModel);
         $this->ollamaUrl = rtrim(config('ollama.base_url', 'http://ollama:11434'), '/');
         $this->ollamaRequestTimeout = max(30, (int) config('ollama.request_timeout', 300));
         $this->ollamaHealthTimeout = max(3, (int) config('ollama.health_timeout', 10));
@@ -246,14 +258,17 @@ class RagQueryService
      * Generic Ollama LLM call for internal and cross-service use.
      *
      * @param array $logContext Optional performance-log metadata (caller, lesson_id, stage, etc.)
+     * @param string|null $model Override the model used for this call (e.g. a larger
+     *                           classification model). Defaults to llm_model (text generation).
      */
-    public function callLlm(string $prompt, string $system, int $maxTokens = 80, array $logContext = []): string
+    public function callLlm(string $prompt, string $system, int $maxTokens = 80, array $logContext = [], ?string $model = null): string
     {
+        $model = $model ?? $this->llmModel;
         $callStart = microtime(true);
         try {
             $response = Http::timeout($this->ollamaRequestTimeout)
                 ->post("{$this->ollamaUrl}/api/generate", [
-                    'model' => $this->llmModel,
+                    'model' => $model,
                     'prompt' => $prompt,
                     'system' => $system,
                     'stream' => false,
@@ -268,7 +283,7 @@ class RagQueryService
             if ($response->failed()) {
                 AiPerformanceLogger::logError(
                     $wallClockMs,
-                    array_merge(['caller' => 'rag_query', 'model_name' => $this->llmModel], $logContext),
+                    array_merge(['caller' => 'rag_query', 'model_name' => $model], $logContext),
                     "Ollama API request failed: {$response->status()}"
                 );
                 throw new \RuntimeException(
@@ -287,7 +302,7 @@ class RagQueryService
             AiPerformanceLogger::log(
                 $data,
                 $wallClockMs,
-                array_merge(['caller' => 'rag_query', 'model_name' => $this->llmModel], $logContext)
+                array_merge(['caller' => 'rag_query', 'model_name' => $model], $logContext)
             );
 
             $evalDurationNs = $data['eval_duration'] ?? null;
@@ -307,7 +322,7 @@ class RagQueryService
             Log::error('[RAG Query] LLM generation failed', [
                 'error' => $e->getMessage(),
                 'ollama_url' => $this->ollamaUrl,
-                'model' => $this->llmModel,
+                'model' => $model,
             ]);
 
             if (str_contains($e->getMessage(), 'timed out') || str_contains($e->getMessage(), 'cURL error 28')) {
@@ -315,7 +330,7 @@ class RagQueryService
                     "Ollama service is not responding. This may be because:\n" .
                     "1. Ollama is still loading the model (first-time use can take 1-3 minutes)\n" .
                     "2. Ollama service is not running\n" .
-                    "3. The model '{$this->llmModel}' is not available\n" .
+                    "3. The model '{$model}' is not available\n" .
                     'Please check that Ollama is running and try again.'
                 );
             }

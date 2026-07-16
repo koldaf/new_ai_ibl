@@ -79,6 +79,80 @@ class StageCheckpointServiceTest extends TestCase
         $this->assertSame('Too short. What key idea supports your answer?', $result['answer']);
     }
 
+    #[Test]
+    public function it_rejects_an_llm_classification_that_leaks_prompt_template_text(): void
+    {
+        // Reproduces the real bug: a student answer that inverts the actual law
+        // ("energy is created" instead of "cannot be created or destroyed") got
+        // graded "correct" at high confidence, with feedback that ended in the
+        // literal "...or null" fragment lifted from the JSON schema instructions.
+        $lesson = Lesson::create([
+            'title' => 'Energy',
+            'description' => 'Checkpoint guardrail test',
+        ]);
+
+        $ragService = Mockery::mock(RagQueryService::class);
+        $ragService->shouldReceive('getClassificationModel')->once()->andReturn('qwen2.5:0.5b');
+        $ragService->shouldReceive('callLlm')->once()->andReturn(json_encode([
+            'classification' => 'correct',
+            'confidence' => 0.9,
+            'feedback' => 'The student provided a detailed explanation using the law of conservation of energy to ...or null',
+            'follow_up' => null,
+        ]));
+
+        $service = new StageCheckpointService($ragService);
+
+        $method = new \ReflectionMethod(StageCheckpointService::class, 'classifyWithRag');
+        $method->setAccessible(true);
+
+        $result = $method->invoke(
+            $service,
+            $lesson,
+            'the law states that all forms of energy are created somehow',
+            'explain',
+            'Student Three',
+            'Energy conservation states energy cannot be created or destroyed, only transformed between forms.'
+        );
+
+        // Rejected outright — the caller (classifyAnswer) treats null as "fall
+        // back to the rule-based classifier" rather than trusting this verdict.
+        $this->assertNull($result);
+    }
+
+    #[Test]
+    public function it_rejects_a_correct_verdict_that_shares_no_vocabulary_with_the_lesson_context(): void
+    {
+        $lesson = Lesson::create([
+            'title' => 'Energy',
+            'description' => 'Checkpoint guardrail test',
+        ]);
+
+        $ragService = Mockery::mock(RagQueryService::class);
+        $ragService->shouldReceive('getClassificationModel')->once()->andReturn('qwen2.5:0.5b');
+        $ragService->shouldReceive('callLlm')->once()->andReturn(json_encode([
+            'classification' => 'correct',
+            'confidence' => 0.95,
+            'feedback' => 'Great answer, well done!',
+            'follow_up' => null,
+        ]));
+
+        $service = new StageCheckpointService($ragService);
+
+        $method = new \ReflectionMethod(StageCheckpointService::class, 'classifyWithRag');
+        $method->setAccessible(true);
+
+        $result = $method->invoke(
+            $service,
+            $lesson,
+            'I like pizza and video games on the weekend',
+            'explain',
+            'Student Four',
+            'Energy conservation states energy cannot be created or destroyed, only transformed between forms.'
+        );
+
+        $this->assertNull($result);
+    }
+
     protected function tearDown(): void
     {
         Mockery::close();

@@ -9,6 +9,7 @@ use App\Models\LessonCheckpointQuestion;
 use App\Models\LessonMisconception;
 use App\Models\MisconceptionEvent;
 use App\Models\User;
+use App\Support\AiResponseGuard;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -189,6 +190,14 @@ class EngageDecisionService
                 "The student's name is {$userName}. Use it only when it feels natural.\n\n" .
                 "Return exactly this JSON shape:\n" .
                 "{\"classification\":\"correct|partial|misconception|off_topic\",\"confidence\":0.0,\"feedback\":\"...\",\"follow_up\":\"... or null\"}\n\n" .
+                "Worked examples — follow this reasoning, especially example 2: an answer can reuse the " .
+                "right words while stating the opposite of what's true, which is a misconception, not correct.\n" .
+                "Context: \"Plants make their own food through photosynthesis using sunlight, water, and carbon dioxide.\" " .
+                "Answer: \"Plants use sunlight and water to make their own food.\" -> " .
+                "{\"classification\":\"correct\",\"confidence\":0.8,\"feedback\":\"Good, that captures how plants make food.\",\"follow_up\":null}\n" .
+                "Context: \"Energy cannot be created or destroyed, only changed from one form to another.\" " .
+                "Answer: \"Energy is created inside batteries and fuel whenever we need it.\" -> " .
+                "{\"classification\":\"misconception\",\"confidence\":0.8,\"feedback\":\"Not quite - energy isn't created, it's stored and changes form.\",\"follow_up\":\"What happens to energy already stored in a battery when a torch switches on?\"}\n\n" .
                 "Lesson context:\n<CONTEXT>\n{$context}\n</CONTEXT>\n\n" .
                 $memoryBlock .
                 "Student answer: {$answer}";
@@ -198,7 +207,7 @@ class EngageDecisionService
                 'lesson_id'        => $lesson->id,
                 'stage'            => 'engage',
                 'question_snippet' => $answer,
-            ]));
+            ], $this->ragService->getClassificationModel()));
             $decoded = $this->decodeRagJson($raw);
 
             if (!is_array($decoded)) {
@@ -228,6 +237,23 @@ class EngageDecisionService
                 }
             } else {
                 $followUp = null;
+            }
+
+            if (AiResponseGuard::looksLikeTemplateLeakage($feedback) || ($followUp !== null && AiResponseGuard::looksLikeTemplateLeakage($followUp))) {
+                Log::warning('[EngageDecision] Rejected LLM classification: looked like template leakage, falling back to rule-based classifier', [
+                    'lesson_id' => $lesson->id,
+                    'raw_feedback' => $feedback,
+                    'raw_follow_up' => $followUp,
+                ]);
+                return null;
+            }
+
+            if ($classification === 'correct' && AiResponseGuard::sharesNoKeywords($answer, $this->extractKeywords($context))) {
+                Log::warning('[EngageDecision] Rejected "correct" verdict: answer shares no vocabulary with lesson context', [
+                    'lesson_id' => $lesson->id,
+                    'answer' => $answer,
+                ]);
+                return null;
             }
 
             return [

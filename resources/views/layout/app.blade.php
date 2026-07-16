@@ -525,6 +525,13 @@
                 <i class="bi bi-lightning-charge"></i>
                 <span>Load Test</span>
             </a>
+
+            {{-- Classification Review --}}
+            <a href="{{ route('admin.classification-reviews.index') }}"
+               class="nav-item-link {{ request()->routeIs('admin.classification-reviews.*') ? 'active' : '' }}">
+                <i class="bi bi-check2-square"></i>
+                <span>Review AI Grading</span>
+            </a>
             @endif
             @if(auth()->user()->role === 'student')
                 {{-- My Lessons --}}

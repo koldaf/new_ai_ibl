@@ -29,16 +29,27 @@ class AiChatMessage extends Model
         'retrieval_mode',
         'turn_index',
         'parent_message_id',
+        'reviewed_at',
+        'reviewed_by',
+        'review_verdict',
+        'corrected_classification',
+        'review_notes',
     ];
 
     protected $casts = [
         'bloom_confidence' => 'float',
         'confidence' => 'float',
+        'reviewed_at' => 'datetime',
     ];
 
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function reviewer()
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
     }
 
     public function lesson()

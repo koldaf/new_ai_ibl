@@ -7,6 +7,7 @@ use App\Models\Lesson;
 use App\Models\LessonCheckpointCorpus;
 use App\Models\LessonCheckpointQuestion;
 use App\Models\User;
+use App\Support\AiResponseGuard;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -327,6 +328,14 @@ class StageCheckpointService
                 "The student's name is {$userName}. Address them naturally in feedback.\n\n" .
                 "Return exactly this JSON:\n" .
                 "{\"classification\":\"correct|partial|off_topic\",\"confidence\":0.0,\"feedback\":\"...\",\"follow_up\":\"...or null\"}\n\n" .
+                "Worked examples — follow this reasoning, especially example 2: an answer can reuse the " .
+                "right words while stating the opposite of what's true, which is not correct.\n" .
+                "Context: \"Plants make their own food through photosynthesis using sunlight, water, and carbon dioxide.\" " .
+                "Answer: \"Plants use sunlight and water to make their own food.\" -> " .
+                "{\"classification\":\"correct\",\"confidence\":0.8,\"feedback\":\"Good, that's how plants make food.\",\"follow_up\":null}\n" .
+                "Context: \"Energy cannot be created or destroyed, only changed from one form to another.\" " .
+                "Answer: \"Energy is created inside batteries and fuel whenever we need it.\" -> " .
+                "{\"classification\":\"partial\",\"confidence\":0.6,\"feedback\":\"Close, but energy isn't created.\",\"follow_up\":\"What happens to energy already stored in a battery?\"}\n\n" .
                 "Lesson context:\n<CONTEXT>\n{$context}\n</CONTEXT>\n\n" .
                 "Student answer: {$answer}";
 
@@ -335,7 +344,7 @@ class StageCheckpointService
                 'lesson_id' => $lesson->id,
                 'stage' => $stage,
                 'question_snippet' => $answer,
-            ]));
+            ], $this->ragService->getClassificationModel()));
 
             $decoded = $this->decodeJson($raw);
             if (!is_array($decoded)) {
@@ -357,6 +366,25 @@ class StageCheckpointService
                 ? trim($decoded['follow_up'])
                 : null;
             $followUp = ($followUp === '' || $followUp === 'null') ? null : $followUp;
+
+            if (AiResponseGuard::looksLikeTemplateLeakage($feedback) || ($followUp !== null && AiResponseGuard::looksLikeTemplateLeakage($followUp))) {
+                Log::warning('[StageCheckpoint] Rejected LLM classification: looked like template leakage, falling back to rule-based classifier', [
+                    'lesson_id' => $lesson->id,
+                    'stage' => $stage,
+                    'raw_feedback' => $feedback,
+                    'raw_follow_up' => $followUp,
+                ]);
+                return null;
+            }
+
+            if ($classification === 'correct' && AiResponseGuard::sharesNoKeywords($answer, $this->extractKeywords($context))) {
+                Log::warning('[StageCheckpoint] Rejected "correct" verdict: answer shares no vocabulary with lesson context', [
+                    'lesson_id' => $lesson->id,
+                    'stage' => $stage,
+                    'answer' => $answer,
+                ]);
+                return null;
+            }
 
             return [$classification, $confidence, $feedback, $followUp];
         } catch (\Throwable $e) {

@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\AiPerformanceController;
 use App\Http\Controllers\Admin\LoadTestController;
+use App\Http\Controllers\Admin\ClassificationReviewController;
 use App\Http\Controllers\Students\LessonController as StudentLessonController;
 use App\Http\Controllers\Students\QuizController;
 use App\Http\Controllers\Students\AIChatController;
@@ -131,6 +132,12 @@ Route::prefix('admin')
             ->name('load-test.index');
         Route::post('/load-test/run', [LoadTestController::class, 'run'])
             ->name('load-test.run');
+
+        // Human review of AI classifications — builds the verified dataset needed for fine-tuning
+        Route::get('/classification-reviews', [ClassificationReviewController::class, 'index'])
+            ->name('classification-reviews.index');
+        Route::post('/classification-reviews/{message}/review', [ClassificationReviewController::class, 'review'])
+            ->name('classification-reviews.review');
     });
 
 /*
