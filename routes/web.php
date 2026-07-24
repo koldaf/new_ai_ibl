@@ -126,6 +126,8 @@ Route::prefix('admin')
             ->name('ai-performance.live-stats');
         Route::get('/ai-performance/chart-data', [AiPerformanceController::class, 'chartData'])
             ->name('ai-performance.chart-data');
+        Route::get('/ai-performance/export', [AiPerformanceController::class, 'exportLogs'])
+            ->name('ai-performance.export');
 
         // Concurrent-user load testing against the real RAG pipeline
         Route::get('/load-test', [LoadTestController::class, 'index'])

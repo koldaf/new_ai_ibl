@@ -353,7 +353,12 @@
     <div class="chart-card mb-4">
         <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
             <div class="section-title mb-0">Recent Query Log</div>
-            <span style="font-size:.78rem; color:var(--text-muted);">Showing {{ $logs->firstItem() }}–{{ $logs->lastItem() }} of {{ $logs->total() }} entries</span>
+            <div class="d-flex align-items-center gap-3">
+                <span style="font-size:.78rem; color:var(--text-muted);">Showing {{ $logs->firstItem() }}–{{ $logs->lastItem() }} of {{ $logs->total() }} entries</span>
+                <a href="{{ route('admin.ai-performance.export') }}" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-download"></i> Export CSV
+                </a>
+            </div>
         </div>
         <div class="table-responsive">
             <table class="table table-sm perf-table align-middle">

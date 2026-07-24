@@ -10,9 +10,57 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AiPerformanceController extends Controller
 {
+    /**
+     * Export the full Recent Query Log as CSV — not just the current page.
+     * Streamed row-by-row via a cursor so this stays cheap in memory even as
+     * the log table grows, rather than loading every row into an array first.
+     */
+    public function exportLogs(): StreamedResponse
+    {
+        $filename = 'ai-performance-log-' . now()->format('Y-m-d_His') . '.csv';
+
+        return response()->streamDownload(function () {
+            $handle = fopen('php://output', 'w');
+
+            fputcsv($handle, [
+                'Time', 'Caller', 'Stage', 'Model', 'Response (ms)', 'TTFT (ms)', 'TPS',
+                'Prompt Tokens', 'Generated Tokens', 'Load (ms)', 'Done Reason',
+                'Context Chunks', 'Question', 'Status', 'Error',
+            ]);
+
+            AiPerformanceLog::query()
+                ->orderByDesc('id')
+                ->cursor()
+                ->each(function (AiPerformanceLog $log) use ($handle) {
+                    fputcsv($handle, [
+                        $log->created_at?->format('Y-m-d H:i:s'),
+                        $log->caller,
+                        $log->stage,
+                        $log->model_name,
+                        $log->response_time_ms,
+                        $log->ttft_ms,
+                        $log->tokens_per_second,
+                        $log->prompt_tokens,
+                        $log->tokens_generated,
+                        $log->load_duration_ms,
+                        $log->done_reason,
+                        $log->context_chunks,
+                        $log->question_snippet,
+                        $log->error ? 'Error' : 'OK',
+                        $log->error,
+                    ]);
+                });
+
+            fclose($handle);
+        }, $filename, [
+            'Content-Type' => 'text/csv',
+        ]);
+    }
+
     /**
      * Main dashboard view.
      */
