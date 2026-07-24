@@ -22,6 +22,7 @@ class AiPerformanceLog extends Model
         'prompt_tokens',
         'tokens_generated',
         'tokens_per_second',
+        'done_reason',
         'context_chunks',
         'error',
     ];

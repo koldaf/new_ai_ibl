@@ -639,6 +639,77 @@ $(document).ready(function() {
         $('#floating-assistant-loading').remove();
     }
 
+    function streamChatAnswer(question, stage) {
+        var messagesDiv = $('#chat-messages');
+        showFloatingAssistantLoading();
+
+        var bubbleId = 'stream-bubble-' + Date.now();
+        var bubbleCreated = false;
+        var accumulated = '';
+
+        function ensureBubble() {
+            if (bubbleCreated) return;
+            removeFloatingAssistantLoading();
+            messagesDiv.append('<div class="text-start mb-2"><span id="' + bubbleId + '" class="bg-light p-2 rounded d-inline-block"></span></div>');
+            bubbleCreated = true;
+        }
+
+        fetch('{{ route("student.lessons.ai.ask-stream", $lesson) }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'Accept': 'application/x-ndjson'
+            },
+            body: JSON.stringify({ question: question, stage: stage })
+        }).then(function(response) {
+            if (!response.ok || !response.body) {
+                throw new Error('Streaming request failed');
+            }
+
+            var reader = response.body.getReader();
+            var decoder = new TextDecoder();
+            var buffer = '';
+
+            function pump() {
+                return reader.read().then(function(result) {
+                    if (result.done) return;
+
+                    buffer += decoder.decode(result.value, { stream: true });
+                    var lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    lines.forEach(function(line) {
+                        line = line.trim();
+                        if (!line) return;
+
+                        var data;
+                        try {
+                            data = JSON.parse(line);
+                        } catch (e) {
+                            return;
+                        }
+
+                        if (data.token) {
+                            ensureBubble();
+                            accumulated += data.token;
+                            $('#' + bubbleId).text(accumulated);
+                            messagesDiv.scrollTop(messagesDiv[0].scrollHeight);
+                        }
+                    });
+
+                    return pump();
+                });
+            }
+
+            return pump();
+        }).catch(function() {
+            removeFloatingAssistantLoading();
+            messagesDiv.append('<div class="text-start mb-2 text-danger">Error: could not get a response. Please try again.</div>');
+            scrollToBottom('#chat-messages');
+        });
+    }
+
     function requestEngageStart() {
         if (engageMode !== 'chat' || engageStarted) {
             return;
@@ -884,27 +955,36 @@ $(document).ready(function() {
         var messagesDiv = $('#chat-messages');
         messagesDiv.append('<div class="text-end mb-2"><span class="bg-primary text-white p-2 rounded">' + question + '</span></div>');
         $('#chat-input').val('');
-        showFloatingAssistantLoading();
 
-        $.ajax({
-            url: '{{ route("student.lessons.ai.ask", $lesson) }}',
-            method: 'POST',
-            data: {
-                _token: '{{ csrf_token() }}',
-                question: question,
-                stage: stage,
-                intent: intent
-            },
-            success: function(response) {
-                removeFloatingAssistantLoading();
-                appendFloatingAssistantMessage(response.answer, response);
-                messagesDiv.scrollTop(messagesDiv[0].scrollHeight);
-            },
-            error: function(xhr) {
-                removeFloatingAssistantLoading();
-                messagesDiv.append('<div class="text-start mb-2 text-danger">Error: ' + (xhr.responseJSON.message || 'Unknown error') + '</div>');
-            }
-        });
+        // Engage answers go through classification (structured JSON, not free
+        // text) so they stay on the non-streaming endpoint. Open-ended questions
+        // on every other stage stream the answer in as it's generated.
+        if (stage === 'engage') {
+            showFloatingAssistantLoading();
+
+            $.ajax({
+                url: '{{ route("student.lessons.ai.ask", $lesson) }}',
+                method: 'POST',
+                data: {
+                    _token: '{{ csrf_token() }}',
+                    question: question,
+                    stage: stage,
+                    intent: intent
+                },
+                success: function(response) {
+                    removeFloatingAssistantLoading();
+                    appendFloatingAssistantMessage(response.answer, response);
+                    messagesDiv.scrollTop(messagesDiv[0].scrollHeight);
+                },
+                error: function(xhr) {
+                    removeFloatingAssistantLoading();
+                    messagesDiv.append('<div class="text-start mb-2 text-danger">Error: ' + (xhr.responseJSON.message || 'Unknown error') + '</div>');
+                }
+            });
+            return;
+        }
+
+        streamChatAnswer(question, stage);
     });
 
     // ── Checkpoint helpers for explore / explain / elaborate ─────────────────

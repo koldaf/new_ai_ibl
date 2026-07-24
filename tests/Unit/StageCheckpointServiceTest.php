@@ -153,6 +153,42 @@ class StageCheckpointServiceTest extends TestCase
         $this->assertNull($result);
     }
 
+    #[Test]
+    public function it_allows_a_full_conversational_reply_through_without_chopping_it_down(): void
+    {
+        $service = new StageCheckpointService(Mockery::mock(RagQueryService::class));
+
+        $method = new \ReflectionMethod(StageCheckpointService::class, 'normalizeSocraticReply');
+        $method->setAccessible(true);
+
+        // 25-word feedback + 16-word follow-up — the actual conversational target,
+        // well within the new limits. The old caps (14 words when a follow-up is
+        // present) would have gutted this back down to a terse fragment.
+        $feedback = implode(' ', array_fill(0, 25, 'word'));
+        $followUp = implode(' ', array_fill(0, 16, 'ask'));
+
+        [, , $resultFeedback, $resultFollowUp] = $method->invoke($service, 'partial', 0.6, $feedback, $followUp);
+
+        $this->assertSame($feedback, $resultFeedback);
+        $this->assertSame($followUp, $resultFollowUp);
+    }
+
+    #[Test]
+    public function it_still_caps_a_model_that_rambles_on_too_long(): void
+    {
+        $service = new StageCheckpointService(Mockery::mock(RagQueryService::class));
+
+        $method = new \ReflectionMethod(StageCheckpointService::class, 'normalizeSocraticReply');
+        $method->setAccessible(true);
+
+        $feedback = implode(' ', array_fill(0, 50, 'word'));
+        $followUp = implode(' ', array_fill(0, 16, 'ask'));
+
+        [, , $resultFeedback] = $method->invoke($service, 'partial', 0.6, $feedback, $followUp);
+
+        $this->assertSame(35, str_word_count($resultFeedback));
+    }
+
     protected function tearDown(): void
     {
         Mockery::close();

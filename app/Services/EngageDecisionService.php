@@ -190,14 +190,10 @@ class EngageDecisionService
                 "The student's name is {$userName}. Use it only when it feels natural.\n\n" .
                 "Return exactly this JSON shape:\n" .
                 "{\"classification\":\"correct|partial|misconception|off_topic\",\"confidence\":0.0,\"feedback\":\"...\",\"follow_up\":\"... or null\"}\n\n" .
-                "Worked examples — follow this reasoning, especially example 2: an answer can reuse the " .
-                "right words while stating the opposite of what's true, which is a misconception, not correct.\n" .
-                "Context: \"Plants make their own food through photosynthesis using sunlight, water, and carbon dioxide.\" " .
-                "Answer: \"Plants use sunlight and water to make their own food.\" -> " .
-                "{\"classification\":\"correct\",\"confidence\":0.8,\"feedback\":\"Good, that captures how plants make food.\",\"follow_up\":null}\n" .
-                "Context: \"Energy cannot be created or destroyed, only changed from one form to another.\" " .
-                "Answer: \"Energy is created inside batteries and fuel whenever we need it.\" -> " .
-                "{\"classification\":\"misconception\",\"confidence\":0.8,\"feedback\":\"Not quite - energy isn't created, it's stored and changes form.\",\"follow_up\":\"What happens to energy already stored in a battery when a torch switches on?\"}\n\n" .
+                "Important: reusing the lesson context's own words does not make an answer correct. " .
+                "If the answer states the opposite of what the context says — for example, claiming something " .
+                "happens that the context says cannot happen — that is a misconception, not correct. " .
+                "Judge the meaning of the answer, not how many words it shares with the context.\n\n" .
                 "Lesson context:\n<CONTEXT>\n{$context}\n</CONTEXT>\n\n" .
                 $memoryBlock .
                 "Student answer: {$answer}";

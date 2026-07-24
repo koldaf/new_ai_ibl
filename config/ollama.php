@@ -11,4 +11,8 @@ return [
     'request_timeout' => (int) env('OLLAMA_REQUEST_TIMEOUT', 300),
     'embedding_timeout' => (int) env('OLLAMA_EMBEDDING_TIMEOUT', 120),
     'health_timeout' => (int) env('OLLAMA_HEALTH_TIMEOUT', 10),
+    // Context window Ollama reserves per request. Larger values cost more RAM/compute
+    // for the KV cache regardless of how much of it the actual prompt uses, so keep this
+    // matched to real prompt sizes rather than a model's (often much larger) default.
+    'num_ctx' => (int) env('OLLAMA_NUM_CTX', 4096),
 ];

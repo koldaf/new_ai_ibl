@@ -187,6 +187,9 @@ Route::prefix('student')
         Route::post('/lessons/{lesson}/ai/ask',
             [AIChatController::class, 'ask'])
             ->name('lessons.ai.ask');
+        Route::post('/lessons/{lesson}/ai/ask-stream',
+            [AIChatController::class, 'askStream'])
+            ->name('lessons.ai.ask-stream');
     });
 
 Route::prefix('teacher')

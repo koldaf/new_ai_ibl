@@ -59,4 +59,65 @@ class AiResponseGuardTest extends TestCase
     {
         $this->assertFalse(AiResponseGuard::sharesNoKeywords('anything at all', []));
     }
+
+    #[Test]
+    public function it_trims_a_truncated_answer_back_to_the_last_complete_sentence(): void
+    {
+        $truncated = 'Energy is stored in the battery as chemical energy. When the torch switches on, it changes into light and he';
+
+        $this->assertSame(
+            'Energy is stored in the battery as chemical energy.',
+            AiResponseGuard::trimToLastCompleteSentence($truncated)
+        );
+    }
+
+    #[Test]
+    public function it_keeps_the_full_text_when_it_already_ends_cleanly(): void
+    {
+        $clean = 'Good, that is correct!';
+
+        $this->assertSame($clean, AiResponseGuard::trimToLastCompleteSentence($clean));
+    }
+
+    #[Test]
+    public function it_returns_the_original_text_when_no_sentence_boundary_exists(): void
+    {
+        $fragment = 'energy is stored in the battery as chemical';
+
+        $this->assertSame($fragment, AiResponseGuard::trimToLastCompleteSentence($fragment));
+    }
+
+    #[Test]
+    public function it_detects_the_out_of_context_phrase_case_insensitively(): void
+    {
+        $this->assertTrue(AiResponseGuard::containsPhrase(
+            'Your question is out of context for this lesson.',
+            'your question is out of context for this lesson'
+        ));
+        $this->assertFalse(AiResponseGuard::containsPhrase(
+            'Energy cannot be created or destroyed.',
+            'your question is out of context for this lesson'
+        ));
+    }
+
+    #[Test]
+    public function it_truncates_right_after_the_refusal_phrase_and_drops_the_answer_that_followed(): void
+    {
+        // Reproduces the real bug: the model correctly said the refusal, then
+        // kept going anyway and answered from outside the RAG corpus.
+        $leaked = 'Your question is out of context for this lesson. Answer: Energy cannot be created; ' .
+            'it can only change from one form into another. This is known as the law of conservation of energy.';
+
+        $result = AiResponseGuard::truncateAfterPhrase($leaked, 'your question is out of context for this lesson');
+
+        $this->assertSame('Your question is out of context for this lesson.', $result);
+    }
+
+    #[Test]
+    public function it_leaves_text_unchanged_when_the_phrase_is_not_present(): void
+    {
+        $answer = 'Chemical energy stored in the battery powers the torch.';
+
+        $this->assertSame($answer, AiResponseGuard::truncateAfterPhrase($answer, 'your question is out of context for this lesson'));
+    }
 }

@@ -12,6 +12,7 @@ use App\Services\InquiryPhaseAnalyticsService;
 use App\Services\RagQueryService;
 use App\Services\StageCheckpointService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class AIChatController extends Controller
 {
@@ -166,6 +167,96 @@ class AIChatController extends Controller
                 'message' => 'AI service error: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Streaming twin of ask() for the plain, open-ended student Q&A path only
+     * (explore/explain/elaborate/evaluate "ask" intent) — engage classification
+     * and checkpoint start/answer stay on the non-streaming ask() endpoint since
+     * they return structured JSON, not free text meant to be typed out live.
+     */
+    public function askStream(Request $request, Lesson $lesson)
+    {
+        $request->validate([
+            'question' => 'required|string|max:500',
+            'stage' => 'required|string|in:explore,explain,elaborate,evaluate',
+        ]);
+
+        $stage = $request->input('stage');
+        $question = $request->question;
+        $user = $request->user();
+
+        $this->inquiryAnalytics->touchStage($user, $lesson, $stage);
+
+        $memoryHistory = $this->memoryService->getHistoryForPrompt($user, $lesson);
+        $memoryContext = $this->memoryService->buildPromptContext($memoryHistory, $lesson->id);
+        $memoryEnabled = $this->memoryService->isEnabled();
+
+        return response()->stream(function () use ($lesson, $question, $stage, $user, $memoryContext, $memoryEnabled) {
+            $writeLine = function (array $payload) {
+                echo json_encode($payload) . "\n";
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
+                flush();
+            };
+
+            $fullAnswer = '';
+
+            try {
+                $generator = $this->ragQueryService->generateResponseStream(
+                    $question,
+                    $lesson->id,
+                    $stage,
+                    $user->name,
+                    3,
+                    $memoryContext,
+                    $memoryEnabled
+                );
+
+                foreach ($generator as $token) {
+                    $writeLine(['token' => $token, 'done' => false]);
+                }
+
+                $fullAnswer = (string) $generator->getReturn();
+            } catch (\Throwable $e) {
+                Log::error('[AIChat] Streaming ask failed', [
+                    'error' => $e->getMessage(),
+                    'lesson_id' => $lesson->id,
+                ]);
+
+                $fullAnswer = 'Sorry, something went wrong generating a response. Please try again.';
+                $writeLine(['token' => $fullAnswer, 'done' => false]);
+            }
+
+            $bloom = $this->classifyLearnerQuestion($question, $stage, 'ask');
+
+            AiChatMessage::create([
+                'user_id' => $user->id,
+                'lesson_id' => $lesson->id,
+                'stage' => $stage,
+                'question' => $question,
+                'answer' => $fullAnswer,
+                'bloom_level' => $bloom['bloom_level'],
+                'bloom_confidence' => $bloom['bloom_confidence'],
+                'context_source' => 'rag',
+                'retrieval_mode' => 'vector',
+            ]);
+
+            $evidenceCount = $this->inquiryAnalytics->deriveEvidenceCountFromResponse($fullAnswer);
+            $this->inquiryAnalytics->recordQuestion($user, $lesson, $stage, $evidenceCount);
+
+            $writeLine([
+                'token' => '',
+                'done' => true,
+                'bloom_level' => $bloom['bloom_level'],
+                'bloom_confidence' => $bloom['bloom_confidence'],
+            ]);
+        }, 200, [
+            'Content-Type' => 'application/x-ndjson',
+            'Cache-Control' => 'no-cache',
+            'X-Accel-Buffering' => 'no',
+        ]);
     }
 
     private function handleCheckpoint(Request $request, Lesson $lesson, string $stage, string $intent)

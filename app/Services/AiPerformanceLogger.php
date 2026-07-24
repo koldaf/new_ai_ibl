@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Log;
  *   eval_duration       long  — nanoseconds spent generating tokens
  *   total_duration      long  — nanoseconds total
  *   load_duration       long  — nanoseconds loading the model
+ *   done_reason         string — "stop" (natural end) vs "length" (hit num_predict, truncated)
  */
 class AiPerformanceLogger
 {
@@ -62,6 +63,9 @@ class AiPerformanceLogger
             // ── Model name (prefer Ollama's confirmed value, fall back to context) ─
             $modelName = $ollamaData['model'] ?? ($context['model_name'] ?? 'unknown');
 
+            // ── Why generation stopped: "stop" (natural/EOS) vs "length" (hit num_predict) ─
+            $doneReason = $ollamaData['done_reason'] ?? null;
+
             // ── Question snippet ──────────────────────────────────────────────────
             $snippet = isset($context['question_snippet'])
                 ? mb_substr((string) $context['question_snippet'], 0, 255)
@@ -83,6 +87,7 @@ class AiPerformanceLogger
                 'prompt_tokens'    => $promptTokens,
                 'tokens_generated' => $tokensGenerated,
                 'tokens_per_second'=> $tps,
+                'done_reason'      => $doneReason,
                 'context_chunks'   => $context['context_chunks'] ?? null,
                 'error'            => $context['error']          ?? null,
             ]);

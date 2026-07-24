@@ -65,4 +65,53 @@ final class AiResponseGuard
 
         return true;
     }
+
+    /**
+     * When Ollama's done_reason is "length" (hit num_predict and got cut off
+     * mid-generation), trim back to the last complete sentence so the student
+     * sees a clean short answer instead of text broken off mid-word. Returns the
+     * text unchanged if no sentence boundary is found — showing the partial
+     * text is better than showing nothing.
+     */
+    public static function trimToLastCompleteSentence(string $text): string
+    {
+        $text = rtrim($text);
+
+        if (preg_match('/^.*[.!?]/su', $text, $matches)) {
+            return trim($matches[0]);
+        }
+
+        return $text;
+    }
+
+    /**
+     * True as soon as $text contains $phrase anywhere (case-insensitive) — used
+     * to detect a small model saying a required refusal/stop phrase and then,
+     * against its own instructions, continuing on to answer anyway.
+     */
+    public static function containsPhrase(string $text, string $phrase): bool
+    {
+        return $phrase !== '' && stripos($text, $phrase) !== false;
+    }
+
+    /**
+     * Cuts $text off right after the first occurrence of $phrase (plus one
+     * trailing punctuation mark, if present), discarding everything the model
+     * generated afterward. Returns $text unchanged if $phrase isn't found.
+     */
+    public static function truncateAfterPhrase(string $text, string $phrase): string
+    {
+        $pos = stripos($text, $phrase);
+        if ($pos === false) {
+            return $text;
+        }
+
+        $endPos = $pos + strlen($phrase);
+
+        if (preg_match('/^[.!?]/', substr($text, $endPos))) {
+            $endPos++;
+        }
+
+        return substr($text, 0, $endPos);
+    }
 }

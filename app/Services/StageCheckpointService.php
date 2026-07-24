@@ -318,24 +318,25 @@ class StageCheckpointService
         try {
             $stageGoal = self::STAGE_GOALS[$stage]['goal'] ?? 'subject understanding';
 
-            $system = 'You are an educational AI evaluating a student checkpoint response. ' .
+            $system = "You are Denzy, a warm, encouraging AI tutor talking with a student. " .
                 'Return only valid JSON. No markdown, no explanation.';
 
             $prompt = "Stage: {$stage}. Goal: evaluate {$stageGoal}.\n" .
                 "Allowed classification values: correct, partial, off_topic.\n" .
-                "Confidence: 0 to 1. Feedback: max 10 words.\n" .
-                "Follow_up: one short Socratic question, max 12 words, if classification is NOT correct, otherwise null.\n" .
-                "The student's name is {$userName}. Address them naturally in feedback.\n\n" .
+                "Confidence: 0 to 1.\n" .
+                "Feedback: 1-2 short, natural sentences (about 25 words). Start by acknowledging something " .
+                "specific from the student's own answer, then build on it or gently correct it — respond like " .
+                "a supportive tutor having a conversation, not a grader reading out a verdict.\n" .
+                "Follow_up: one short, genuinely curious follow-up question (about 15-18 words) that invites " .
+                "the student to keep thinking, if classification is NOT correct, otherwise null.\n" .
+                "The student's name is {$userName}. Use it naturally, like you would talking with them.\n\n" .
                 "Return exactly this JSON:\n" .
                 "{\"classification\":\"correct|partial|off_topic\",\"confidence\":0.0,\"feedback\":\"...\",\"follow_up\":\"...or null\"}\n\n" .
-                "Worked examples — follow this reasoning, especially example 2: an answer can reuse the " .
-                "right words while stating the opposite of what's true, which is not correct.\n" .
-                "Context: \"Plants make their own food through photosynthesis using sunlight, water, and carbon dioxide.\" " .
-                "Answer: \"Plants use sunlight and water to make their own food.\" -> " .
-                "{\"classification\":\"correct\",\"confidence\":0.8,\"feedback\":\"Good, that's how plants make food.\",\"follow_up\":null}\n" .
-                "Context: \"Energy cannot be created or destroyed, only changed from one form to another.\" " .
-                "Answer: \"Energy is created inside batteries and fuel whenever we need it.\" -> " .
-                "{\"classification\":\"partial\",\"confidence\":0.6,\"feedback\":\"Close, but energy isn't created.\",\"follow_up\":\"What happens to energy already stored in a battery?\"}\n\n" .
+                "Important: reusing the lesson context's own words does not make an answer correct. " .
+                "If the answer states the opposite of what the context says — for example, claiming something " .
+                "happens that the context says cannot happen — that is not correct; classify it as partial or " .
+                "off_topic depending on what else is right. Judge the meaning of the answer, not how many " .
+                "words it shares with the context.\n\n" .
                 "Lesson context:\n<CONTEXT>\n{$context}\n</CONTEXT>\n\n" .
                 "Student answer: {$answer}";
 
@@ -501,15 +502,17 @@ class StageCheckpointService
 
     private function normalizeSocraticReply(string $classification, float $confidence, string $feedback, ?string $followUp): array
     {
-        $feedback = $this->limitWords($feedback, $followUp ? 14 : 30);
-        $followUp = $followUp ? $this->limitWords($followUp, 12) : null;
+        // Generous enough for 1-2 conversational sentences + a real follow-up
+        // question, while still guarding against a model that rambles on.
+        $feedback = $this->limitWords($feedback, $followUp ? 35 : 45);
+        $followUp = $followUp ? $this->limitWords($followUp, 20) : null;
 
         if ($feedback === '') {
             $feedback = $classification === 'correct' ? 'Good link to the key idea.' : 'Keep refining your answer.';
         }
 
-        if ($followUp !== null && str_word_count(trim($feedback . ' ' . $followUp)) > 30) {
-            $followUp = $this->limitWords($followUp, max(1, 30 - str_word_count($feedback)));
+        if ($followUp !== null && str_word_count(trim($feedback . ' ' . $followUp)) > 55) {
+            $followUp = $this->limitWords($followUp, max(1, 55 - str_word_count($feedback)));
         }
 
         return [$classification, $confidence, $feedback, $followUp];
@@ -557,11 +560,17 @@ class StageCheckpointService
                 "Generate a complete answer to the checkpoint question that incorporates the key concepts from the lesson. " .
                 "Keep it educational and age-appropriate. Address {$userName} naturally.";
 
-            $fullAnswer = trim($this->ragService->callLlm($prompt, $system, 120, [
+            // 160, not 120: the prompt asks for 50-100 words, and 100 words alone is
+            // already ~130 tokens, so 120 was too tight for its own stated target.
+            $fullAnswer = trim($this->ragService->callLlm($prompt, $system, 160, [
                 'caller' => 'stage_checkpoint_full_answer',
                 'lesson_id' => $lesson->id,
                 'stage' => $stage,
             ]));
+
+            if (($this->ragService->getLastCallMetrics()['done_reason'] ?? null) === 'length') {
+                $fullAnswer = AiResponseGuard::trimToLastCompleteSentence($fullAnswer);
+            }
 
             return $fullAnswer !== '' ? $fullAnswer : null;
         } catch (\Throwable $e) {

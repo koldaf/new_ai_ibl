@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Lesson;
 use App\Models\LessonEmbedding;
 use App\Services\AiPerformanceLogger;
+use App\Support\AiResponseGuard;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -16,6 +17,12 @@ use LLPhant\Embeddings\Document;
 class RagQueryService
 {
     private const STAGES = ['engage', 'explore', 'explain', 'elaborate', 'evaluate'];
+
+    // Matched case-insensitively against generated text to enforce a hard stop:
+    // small models sometimes say this refusal and then, against instructions,
+    // continue on to answer from general knowledge anyway. Deliberately without
+    // trailing punctuation so it still matches if the model paraphrases the end.
+    private const OUT_OF_CONTEXT_PHRASE = 'your question is out of context for this lesson';
 
     private OllamaEmbeddingGenerator $embeddingGenerator;
     private string $llmModel;
@@ -275,6 +282,7 @@ class RagQueryService
                     'options' => [
                         'temperature' => 0.1,
                         'num_predict' => $maxTokens,
+                        'num_ctx' => config('ollama.num_ctx', 4096),
                     ],
                 ]);
 
@@ -314,6 +322,7 @@ class RagQueryService
                     ? round($data['eval_count'] / ($evalDurationNs / 1_000_000_000), 2)
                     : null,
                 'wall_ms' => round($wallClockMs, 2),
+                'done_reason' => $data['done_reason'] ?? null,
             ];
 
             return trim($data['response']);
@@ -358,6 +367,41 @@ class RagQueryService
         bool $memoryEnabled = false,
         array $logContext = []
     ): string {
+        [$system, $userPrompt] = $this->buildChatPrompt($query, $context, $stage, $userName, $memoryContext, $memoryEnabled);
+
+        // 150, not 80: the "under 30 words" instruction is a soft target small models
+        // don't reliably obey, so the cap needs headroom past it or answers get cut
+        // off mid-sentence instead of stopping naturally.
+        $answer = $this->callLlm($userPrompt, $system, 150, $logContext);
+
+        // Enforce the out-of-context refusal as a hard stop in code — the model
+        // sometimes says the required refusal and then keeps going anyway,
+        // answering from its own general knowledge instead of the lesson's RAG
+        // corpus. Checked first: a deliberately-short refusal shouldn't then also
+        // get run through the length-truncation trim below.
+        if (AiResponseGuard::containsPhrase($answer, self::OUT_OF_CONTEXT_PHRASE)) {
+            $answer = AiResponseGuard::truncateAfterPhrase($answer, self::OUT_OF_CONTEXT_PHRASE);
+        } elseif (($this->lastCallMetrics['done_reason'] ?? null) === 'length') {
+            $answer = AiResponseGuard::trimToLastCompleteSentence($answer);
+        }
+
+        return $answer;
+    }
+
+    /**
+     * Shared prompt assembly for the student Q&A chat, used by both the
+     * non-streaming and streaming response paths so they stay in sync.
+     *
+     * @return array{0: string, 1: string} [$system, $userPrompt]
+     */
+    private function buildChatPrompt(
+        string $query,
+        string $context,
+        ?string $stage,
+        ?string $userName,
+        string $memoryContext,
+        bool $memoryEnabled
+    ): array {
         $system = $this->buildStageSystemPrompt($stage ?? 'engage', $userName, $memoryEnabled);
 
         $promptSections = [];
@@ -371,9 +415,162 @@ class RagQueryService
         }
 
         $promptSections[] = "Question: {$query}";
-        $userPrompt = implode("\n\n", $promptSections);
 
-        return $this->callLlm($userPrompt, $system, 80, $logContext);
+        return [$system, implode("\n\n", $promptSections)];
+    }
+
+    /**
+     * Streaming twin of generateResponse(). Yields plain-text answer tokens as they
+     * arrive from Ollama, and returns the full concatenated answer (via the
+     * generator's return value, read with ->getReturn() after iterating) so the
+     * caller can persist it the same way as the non-streaming path.
+     *
+     * @return \Generator<int, string, void, string>
+     */
+    public function generateResponseStream(
+        string $query,
+        int $lessonId,
+        ?string $stage = 'engage',
+        ?string $userName = null,
+        int $topK = 3,
+        string $memoryContext = '',
+        bool $memoryEnabled = false
+    ): \Generator {
+        $lesson = Lesson::findOrFail($lessonId);
+
+        if ($lesson->processing_status !== 'completed') {
+            throw new \RuntimeException("Lesson embeddings are not ready yet. Status: {$lesson->processing_status}");
+        }
+
+        if (empty($lesson->vector_store_path) || !File::exists($lesson->vector_store_path)) {
+            throw new \RuntimeException("Vector store file not found for lesson {$lessonId}");
+        }
+
+        if (!$this->isOllamaHealthy()) {
+            throw new \RuntimeException("Ollama service is not reachable at {$this->ollamaUrl}.");
+        }
+
+        $context = $this->retrieveContext($lesson, $query, $topK);
+
+        if (empty($context) && (!$memoryEnabled || trim($memoryContext) === '')) {
+            $answer = $this->outOfContextResponse($userName, false);
+            yield $answer;
+
+            return $answer;
+        }
+
+        [$system, $userPrompt] = $this->buildChatPrompt($query, $context, $stage, $userName, $memoryContext, $memoryEnabled);
+
+        $logContext = [
+            'caller'           => 'rag_query_stream',
+            'lesson_id'        => $lessonId,
+            'stage'            => $stage,
+            'question_snippet' => $query,
+            'user_name'        => $userName,
+            'context_chunks'   => $this->lastChunkCount,
+            'memory_enabled'   => $memoryEnabled,
+        ];
+
+        $fullAnswer = '';
+        $callStart = microtime(true);
+        $firstTokenMs = null;
+        $lastDoneData = [];
+
+        try {
+            $response = Http::timeout($this->ollamaRequestTimeout)
+                ->withOptions(['stream' => true])
+                ->post("{$this->ollamaUrl}/api/generate", [
+                    'model' => $this->llmModel,
+                    'prompt' => $userPrompt,
+                    'system' => $system,
+                    'stream' => true,
+                    'options' => [
+                        'temperature' => 0.1,
+                        'num_predict' => 150,
+                        'num_ctx' => config('ollama.num_ctx', 4096),
+                    ],
+                ]);
+
+            $body = $response->toPsrResponse()->getBody();
+            $buffer = '';
+
+            while (!$body->eof()) {
+                $buffer .= $body->read(256);
+
+                while (($newlinePos = strpos($buffer, "\n")) !== false) {
+                    $line = trim(substr($buffer, 0, $newlinePos));
+                    $buffer = substr($buffer, $newlinePos + 1);
+
+                    if ($line === '') {
+                        continue;
+                    }
+
+                    $data = json_decode($line, true);
+                    if (!is_array($data)) {
+                        continue;
+                    }
+
+                    $token = $data['response'] ?? '';
+                    if ($token !== '') {
+                        if ($firstTokenMs === null) {
+                            $firstTokenMs = (microtime(true) - $callStart) * 1000;
+                        }
+                        $fullAnswer .= $token;
+                        yield $token;
+
+                        // Enforce the out-of-context refusal as a hard stop, live: the
+                        // model sometimes says the required refusal and then keeps
+                        // generating anyway. Unlike the non-streaming path we can't
+                        // undo tokens already shown, but we CAN stop reading further
+                        // ones the moment the refusal phrase completes, so the student
+                        // never sees the unwanted answer that would have followed.
+                        if (AiResponseGuard::containsPhrase($fullAnswer, self::OUT_OF_CONTEXT_PHRASE)) {
+                            $fullAnswer = AiResponseGuard::truncateAfterPhrase($fullAnswer, self::OUT_OF_CONTEXT_PHRASE);
+                            break 2;
+                        }
+                    }
+
+                    if (!empty($data['done'])) {
+                        $lastDoneData = $data;
+                    }
+                }
+            }
+
+            $wallClockMs = (microtime(true) - $callStart) * 1000;
+
+            AiPerformanceLogger::log(
+                $lastDoneData,
+                $wallClockMs,
+                array_merge($logContext, ['model_name' => $this->llmModel, 'ttft_ms' => $firstTokenMs])
+            );
+
+            // The live stream already showed the student every token as it arrived —
+            // we can't retroactively un-send a truncated trailing word. But we can
+            // still keep what gets saved to chat history (and later reused as memory
+            // context) clean, so a cut-off doesn't compound into future prompts.
+            if (($lastDoneData['done_reason'] ?? null) === 'length') {
+                $fullAnswer = AiResponseGuard::trimToLastCompleteSentence($fullAnswer);
+            }
+        } catch (\Throwable $e) {
+            Log::error('[RAG Query] Streaming LLM generation failed', [
+                'error' => $e->getMessage(),
+                'lesson_id' => $lessonId,
+            ]);
+
+            AiPerformanceLogger::logError(
+                (microtime(true) - $callStart) * 1000,
+                array_merge($logContext, ['model_name' => $this->llmModel]),
+                $e->getMessage()
+            );
+
+            $errorNote = $fullAnswer === ''
+                ? 'Sorry, something went wrong generating a response. Please try again.'
+                : "\n\n[Response cut short due to a server error.]";
+            $fullAnswer .= $errorNote;
+            yield $errorNote;
+        }
+
+        return $fullAnswer;
     }
 
     /**
@@ -400,7 +597,9 @@ class RagQueryService
         return "You are assisting the '{$normalizedStage}' stage of a lesson. {$stageDirective}\n\n" .
             "The student is {$studentName}. Use the name only when it feels natural.\n" .
             "{$memoryRule}\n" .
-            "If the available context does not contain the answer, say: \"Your question is out of context for this lesson.\"\n" .
+            "If the available context does not contain the answer, your ENTIRE reply must be exactly: " .
+            "\"Your question is out of context for this lesson.\" Say nothing else — no explanation, " .
+            "no answer, even if you know it from general knowledge.\n" .
             "Keep the answer under 30 words.";
     }
 
